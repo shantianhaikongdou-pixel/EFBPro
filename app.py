@@ -130,7 +130,6 @@ default_links = [
 
 if os.path.exists(LINK_FILE):
     with open(LINK_FILE, "r", encoding="utf-8") as f: quick_links = json.load(f)
-    # NOTAMサイトが含まれていない場合のみ追加（重複防止）
     if not any("notams.aim.faa.gov" in l["url"] for l in quick_links):
         quick_links.append({"name": "FAA NOTAM SEARCH", "url": "https://notams.aim.faa.gov/notamSearch/nsapp.html#/"})
 else:
@@ -217,14 +216,11 @@ else:
             
             if st.session_state.get('sb_json'):
                 sb = st.session_state['sb_json']
-                
-                # パフォーマンスデータ抽出 (V-Speeds & Trim)
                 to_data = sb.get('takeoff', {})
                 v1, vr, v2 = to_data.get('v1', '--'), to_data.get('vr', '--'), to_data.get('v2', '--')
                 trim = to_data.get('trim', 'N/A')
                 tow = sb.get('weights', {}).get('est_takeoff_weight', '0')
 
-                # V-Speeds & Trim 表示 (オシャレなカード形式)
                 st.markdown(f"""
                 <div style="background: #1a1a1a; padding: 20px; border-radius: 10px; border-left: 5px solid #1DB954; margin-bottom: 20px;">
                     <p style="color: #888; margin: 0; font-size: 0.9em;">TAKEOFF PERFORMANCE</p>
@@ -284,27 +280,36 @@ else:
                 res = requests.get(f"https://metar.vatsim.net/metar.php?id={icao_input}")
                 if res.status_code == 200 and res.text.strip():
                     metar = res.text.strip()
-                    # データ抽出 (Regex)
                     w = re.search(r"(\d{3}|VRB)(\d{2,3})KT", metar)
                     v = re.search(r"\b(\d{4})\b", metar)
-                    t = re.search(r"(\d{2})/(\s|M)(\d{2})", metar)
+                    t_d = re.search(r"(\d{2})/(M?\d{2})", metar)
                     q = re.search(r"Q(\d{4})", metar)
+                    a = re.search(r"A(\d{4})", metar)
+                    
+                    humidity = "N/A"
+                    if t_d:
+                        temp = int(t_d.group(1))
+                        dew = int(t_d.group(2).replace('M', '-'))
+                        rh = 100 - 5 * (temp - dew)
+                        humidity = f"{max(0, min(100, rh))}%"
 
-                    # 画像モチーフのオシャレなリストスタイル
                     st.markdown(f"""
                     <div style="background: #12151a; padding: 25px; border-radius: 5px; font-family: sans-serif;">
-                        <div style="color: #6da5ff; font-weight: bold; margin-bottom: 15px; font-family: monospace; font-size: 1.1em;">{metar}</div>
+                        <div style="color: #6da5ff; font-weight: bold; margin-bottom: 15px; font-family: monospace;">{metar}</div>
                         <div style="border-bottom: 1px solid #2d343e; padding: 8px 0; display: flex; justify-content: space-between;">
                             <span style="color: #8892a0;">Wind</span> <span style="color: #fff;">{w.group(1)+'° at '+w.group(2)+' KT' if w else 'N/A'}</span>
                         </div>
                         <div style="border-bottom: 1px solid #2d343e; padding: 8px 0; display: flex; justify-content: space-between;">
-                            <span style="color: #8892a0;">Visibility</span> <span style="color: #fff;">{v.group(1)+' m or greater' if v else '9999 m'}</span>
+                            <span style="color: #8892a0;">Temperature</span> <span style="color: #fff;">{t_d.group(1) if t_d else '--'}° C</span>
                         </div>
                         <div style="border-bottom: 1px solid #2d343e; padding: 8px 0; display: flex; justify-content: space-between;">
-                            <span style="color: #8892a0;">Temperature</span> <span style="color: #fff;">{t.group(1) if t else '--'}° C</span>
+                            <span style="color: #8892a0;">Dew point</span> <span style="color: #fff;">{t_d.group(2).replace('M', '-') if t_d else '--'}° C</span>
                         </div>
                         <div style="border-bottom: 1px solid #2d343e; padding: 8px 0; display: flex; justify-content: space-between;">
-                            <span style="color: #8892a0;">Altimeter</span> <span style="color: #fff;">{q.group(1) if q else '----'} hPa</span>
+                            <span style="color: #8892a0;">Humidity</span> <span style="color: #fff;">{humidity}</span>
+                        </div>
+                        <div style="border-bottom: 1px solid #2d343e; padding: 8px 0; display: flex; justify-content: space-between;">
+                            <span style="color: #8892a0;">Altimeter</span> <span style="color: #fff;">{q.group(1) if q else '----'} hPa ({a.group(1)[:2]+'.'+a.group(1)[2:] if a else '--.--'} inHg)</span>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -369,45 +374,36 @@ else:
         elif menu == "VATSIM TRAFFIC":
             st.subheader("VATSIM ONLINE TRAFFIC")
             icao = st.text_input("AIRPORT ICAO", "RJTT").upper().strip()
-            
             v_res = requests.get("https://data.vatsim.net/v3/vatsim-data.json")
             if v_res.status_code == 200:
                 v_data = v_res.json()
                 st.write("---")
-                
-                # --- 管制官 ---
                 st.write("**VATJPN ONLINE CONTROLLERS**")
                 conts = [c for c in v_data.get("controllers", []) if c.get("callsign", "").upper().startswith(("RJ", "RO"))]
                 if conts:
                     for c in conts: st.success(f"**{c['callsign']}** ({c['name']}) - {c.get('frequency', 'N/A')}")
-                else:
-                    st.write("📡 No controllers online in Japan region.")
+                else: st.write("📡 No controllers online in Japan region.")
                 
-                # --- トラフィック ---
                 st.write(f"**TRAFFIC AT {icao}**")
                 pilots = []
                 for p in v_data.get("pilots", []):
                     fplan = p.get("flight_plan")
                     dep = (p.get("departure") or (fplan.get("departure") if fplan else "") or "").upper()
                     arr = (p.get("arrival") or (fplan.get("arrival") if fplan else "") or "").upper()
-                    if dep == icao or arr == icao:
-                        pilots.append(p)
+                    if dep == icao or arr == icao: pilots.append(p)
 
                 if pilots:
                     for p in pilots:
                         fplan = p.get("flight_plan")
-                        p_dep = (fplan.get("departure") if fplan else "???")
-                        p_arr = (fplan.get("arrival") if fplan else "???")
-                        st.info(f"**{p['callsign']}** | {p_dep} ➔ {p_arr} | ALT: {p.get('altitude', 0)}ft | {p.get('name', '')}")
-                else:
-                    st.write(f"🛬 No traffic reported for {icao} at the moment.")
+                        st.info(f"**{p['callsign']}** | {(fplan.get('departure') if fplan else '???')} ➔ {(fplan.get('arrival') if fplan else '???')} | ALT: {p.get('altitude', 0)}ft")
+                else: st.write(f"🛬 No traffic reported for {icao}.")
 
-    # --- CHECKLIST TAB ---
+    # --- CHECKLIST TAB (空白削除 & 構成見直し) ---
     with main_tab2:
         st.subheader("AIRCRAFT CHECKLIST")
-        col_ac, col_ph = st.columns([1, 2])
-        with col_ac: ac_type = st.selectbox("SELECT AIRCRAFT", list(cl_db.keys()))
-        with col_ph: phase = st.radio("SELECT PHASE", list(cl_db[ac_type].keys()), horizontal=True)
+        ac_type = st.selectbox("SELECT AIRCRAFT", list(cl_db.keys()))
+        phase = st.radio("SELECT PHASE", list(cl_db[ac_type].keys()), horizontal=True)
+        st.markdown("---")
         st.markdown(f"### {ac_type} - {phase}")
         for item in cl_db[ac_type][phase]:
             st.checkbox(item, key=f"main_cl_{ac_type}_{phase}_{item}")
@@ -431,10 +427,7 @@ else:
                             actual_idx = len(all_logs) - 1 - idx
                             all_logs[actual_idx]["maint_status"] = "RELEASED"
                             with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(all_logs, f, indent=4)
-                            st.balloons()
-                            st.rerun()
+                            st.balloons(); st.rerun()
 
-    # --- リアルタイム更新 ---
     if st.session_state['sw_running'] or st.session_state['timer_end']:
-        time.sleep(1)
-        st.rerun()
+        time.sleep(1); st.rerun()
