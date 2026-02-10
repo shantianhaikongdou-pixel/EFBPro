@@ -81,27 +81,55 @@ cl_db = {
 # --- 1. Page Configuration ---
 st.set_page_config(page_title="EFBPro | Flight Portal", layout="wide")
 
-st.markdown("""
-    <style>
-    .stApp { background-color: #000000; color: #FFFFFF; }
-    h1, h2, h3, p, label, .stMarkdown { color: #FFFFFF !important; }
-    .stTextInput>div>div>input { background-color: #FFFFFF !important; color: #000000 !important; border-radius: 4px !important; }
-    .stButton>button { background-color: #1DB954 !important; color: #FFFFFF !important; border-radius: 4px !important; font-weight: bold; width: 100%; border: none; }
-    [data-testid="stSidebar"] { background-color: #121212; border-right: 1px solid #282828; min-width: 350px !important; }
-    .stTabs [data-baseweb="tab-list"] { position: static !important; background-color: transparent !important; border-bottom: 1px solid #282828; }
-    div[role="radiogroup"] > label > div:first-child { display: none !important; }
-    div[role="radiogroup"] > label {
-        background-color: #1a1a1a !important; border: 1px solid #333 !important;
-        padding: 12px 20px !important; border-radius: 4px !important; margin-bottom: 6px !important;
-        width: 100% !important; transition: all 0.2s ease !important; cursor: pointer !important;
-    }
-    div[role="radiogroup"] > label:hover { border-color: #1DB954 !important; background-color: #252525 !important; }
-    div[role="radiogroup"] > label[data-checked="true"] {
-        background-color: #252525 !important; border-left: 5px solid #1DB954 !important;
-        color: #1DB954 !important; font-weight: bold !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# --- Mode Persistence ---
+if 'efb_mode' not in st.session_state: st.session_state['efb_mode'] = "AIRBUS"
+
+# --- Styling Logic (Design Switch) ---
+if st.session_state['efb_mode'] == "BOEING":
+    accent_color = "#3a86ff"  # Boeing Blue
+    bg_color = "#1a2530"
+    st.markdown(f"""
+        <style>
+        .stApp {{ background-color: {bg_color}; color: #FFFFFF; }}
+        h1, h2, h3, p, label, .stMarkdown {{ color: #FFFFFF !important; }}
+        .stTextInput>div>div>input {{ background-color: #FFFFFF !important; color: #000000 !important; border-radius: 4px !important; }}
+        .stButton>button {{ background-color: #2c3e50 !important; color: #FFFFFF !important; border: 2px solid {accent_color} !important; border-radius: 4px !important; font-weight: bold; width: 100%; }}
+        [data-testid="stSidebar"] {{ background-color: #121212; border-right: 1px solid #282828; min-width: 350px !important; }}
+        .stTabs [data-baseweb="tab-list"] {{ position: static !important; background-color: transparent !important; border-bottom: 1px solid {accent_color}; }}
+        div[role="radiogroup"] > label {{
+            background-color: #16202a !important; border: 1px solid #455a64 !important;
+            padding: 12px 20px !important; border-radius: 4px !important; margin-bottom: 6px !important;
+            width: 100% !important; transition: all 0.2s ease !important; cursor: pointer !important;
+        }}
+        div[role="radiogroup"] > label[data-checked="true"] {{
+            background-color: #1c2a38 !important; border-left: 5px solid {accent_color} !important;
+            color: {accent_color} !important; font-weight: bold !important;
+        }}
+        </style>
+        """, unsafe_allow_html=True)
+else:
+    accent_color = "#1DB954"  # Airbus/Standard Green
+    st.markdown("""
+        <style>
+        .stApp { background-color: #000000; color: #FFFFFF; }
+        h1, h2, h3, p, label, .stMarkdown { color: #FFFFFF !important; }
+        .stTextInput>div>div>input { background-color: #FFFFFF !important; color: #000000 !important; border-radius: 4px !important; }
+        .stButton>button { background-color: #1DB954 !important; color: #FFFFFF !important; border-radius: 4px !important; font-weight: bold; width: 100%; border: none; }
+        [data-testid="stSidebar"] { background-color: #121212; border-right: 1px solid #282828; min-width: 350px !important; }
+        .stTabs [data-baseweb="tab-list"] { position: static !important; background-color: transparent !important; border-bottom: 1px solid #282828; }
+        div[role="radiogroup"] > label > div:first-child { display: none !important; }
+        div[role="radiogroup"] > label {
+            background-color: #1a1a1a !important; border: 1px solid #333 !important;
+            padding: 12px 20px !important; border-radius: 4px !important; margin-bottom: 6px !important;
+            width: 100% !important; transition: all 0.2s ease !important; cursor: pointer !important;
+        }
+        div[role="radiogroup"] > label:hover { border-color: #1DB954 !important; background-color: #252525 !important; }
+        div[role="radiogroup"] > label[data-checked="true"] {
+            background-color: #252525 !important; border-left: 5px solid #1DB954 !important;
+            color: #1DB954 !important; font-weight: bold !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
 # --- 2. Persistence & Session State ---
 DB_FILE, LINK_FILE, POS_FILE = "pilot_logbook.json", "quick_links.json", "pilot_positions.json"
@@ -142,6 +170,13 @@ if not st.session_state['authenticated']:
         st.session_state['authenticated'] = True
         st.rerun()
 else:
+    # --- Mode Switcher Button (右上) ---
+    m_col1, m_col2 = st.columns([0.8, 0.2])
+    with m_col2:
+        if st.button(f"SW TO {'BOEING' if st.session_state['efb_mode'] == 'AIRBUS' else 'AIRBUS'} EFB"):
+            st.session_state['efb_mode'] = "BOEING" if st.session_state['efb_mode'] == "AIRBUS" else "AIRBUS"
+            st.rerun()
+
     with st.sidebar:
         st.title("EFBPro")
         st.markdown(f"**USER ID:** `{SB_USER}`")
@@ -150,7 +185,7 @@ else:
         
         with s_tab1:
             for link in quick_links:
-                st.markdown(f'<a href="{link["url"]}" target="_blank" style="color:#1DB954; text-decoration:none; font-weight:bold; display:block; margin:5px 0;">{link["name"]}</a>', unsafe_allow_html=True)
+                st.markdown(f'<a href="{link["url"]}" target="_blank" style="color:{accent_color}; text-decoration:none; font-weight:bold; display:block; margin:5px 0;">{link["name"]}</a>', unsafe_allow_html=True)
             
             st.markdown("---")
             with st.expander("ADD NEW LINK"):
@@ -222,7 +257,7 @@ else:
                 tow = sb.get('weights', {}).get('est_takeoff_weight', '0')
 
                 st.markdown(f"""
-                <div style="background: #1a1a1a; padding: 20px; border-radius: 10px; border-left: 5px solid #1DB954; margin-bottom: 20px;">
+                <div style="background: {bg_color if st.session_state['efb_mode'] == 'BOEING' else '#1a1a1a'}; padding: 20px; border-radius: 10px; border-left: 5px solid {accent_color}; margin-bottom: 20px;">
                     <p style="color: #888; margin: 0; font-size: 0.9em;">TAKEOFF PERFORMANCE</p>
                     <div style="display: flex; justify-content: space-around; text-align: center; padding: 15px 0;">
                         <div><div style="color:#888; font-size:0.8em;">V1</div><h1 style="margin:0;">{v1}</h1></div>
@@ -230,7 +265,7 @@ else:
                         <div><div style="color:#888; font-size:0.8em;">V2</div><h1 style="margin:0;">{v2}</h1></div>
                     </div>
                     <div style="text-align: center; border-top: 1px solid #333; pt-10px; margin-top: 10px;">
-                        <span style="color:#888;">STAB TRIM:</span> <span style="color:#1DB954; font-weight:bold; font-size:1.2em;">{trim}</span>
+                        <span style="color:#888;">STAB TRIM:</span> <span style="color:{accent_color}; font-weight:bold; font-size:1.2em;">{trim}</span>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -313,7 +348,7 @@ else:
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
-                    st.markdown(f'<div style="margin-top:10px;"><a href="https://atis.guru/{icao_input}" target="_blank" style="color:#1DB954; text-decoration:none;">Open ATIS.GURU</a></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div style="margin-top:10px;"><a href="https://atis.guru/{icao_input}" target="_blank" style="color:{accent_color}; text-decoration:none;">Open ATIS.GURU</a></div>', unsafe_allow_html=True)
 
         elif menu == "LOG":
             st.subheader("PILOT FLIGHT LOG & MAINTENANCE RECORD")
@@ -398,7 +433,7 @@ else:
                         st.info(f"**{p['callsign']}** | {(fplan.get('departure') if fplan else '???')} ➔ {(fplan.get('arrival') if fplan else '???')} | ALT: {p.get('altitude', 0)}ft")
                 else: st.write(f"🛬 No traffic reported for {icao}.")
 
-    # --- CHECKLIST TAB (空白削除 & 構成見直し) ---
+    # --- CHECKLIST TAB ---
     with main_tab2:
         st.subheader("AIRCRAFT CHECKLIST")
         ac_type = st.selectbox("SELECT AIRCRAFT", list(cl_db.keys()))
@@ -418,7 +453,7 @@ else:
         if not all_logs: st.info("未処理の記録はありません。")
         else:
             for idx, entry in enumerate(reversed(all_logs)):
-                status_color = "#1DB954" if entry.get("maint_status") == "RELEASED" else "#FF4B4B"
+                status_color = accent_color if entry.get("maint_status") == "RELEASED" else "#FF4B4B"
                 with st.expander(f"{entry['date']} | {entry['reg']} ({entry['from']} -> {entry['to']}) - {entry.get('maint_status', 'PENDING')}"):
                     st.markdown(f"**フライト詳細:**\n* **飛行内容:** {entry['content']} | **飛行時間:** {entry['total_time']} | **T/O LDG:** {entry['toldg']}\n* **補足:** {entry['extra']} | **署名:** {entry['sign']}")
                     st.markdown(f"<p style='color:{status_color}; font-weight:bold;'>STATUS: {entry.get('maint_status', 'PENDING')}</p>", unsafe_allow_html=True)
