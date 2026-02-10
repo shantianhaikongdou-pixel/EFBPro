@@ -317,17 +317,27 @@ else:
             st.subheader("NOTAM & VATSIM TRAFFIC")
             icao = st.text_input("AIRPORT ICAO", "RJTT").upper()
             if icao:
-                st.markdown(f'<iframe src="https://notams.aim.faa.gov/notamSearch/nsidashboard.action?queryType=ALLICAO&icaoCode={icao}" width="100%" height="400"></iframe>', unsafe_allow_html=True)
+                # FAAサイトが埋め込み拒否されるため、直接リンクを提供
+                st.info("⚠️ FAA NOTAM Search は外部サイトでの確認が必要です。")
+                st.markdown(f'**[👉 CLICK HERE TO OPEN NOTAM FOR {icao}](https://notams.aim.faa.gov/notamSearch/nsidashboard.action?queryType=ALLICAO&icaoCode={icao})**', unsafe_allow_html=True)
+            
             v_res = requests.get("https://data.vatsim.net/v3/vatsim-data.json")
             if v_res.status_code == 200:
                 v_data = v_res.json()
                 st.write("---")
                 st.write("**VATJPN ONLINE CONTROLLERS**")
                 conts = [c for c in v_data.get("controllers", []) if c["callsign"].startswith(("RJ", "RO"))]
-                for c in conts: st.success(f"**{c['callsign']}** ({c['name']}) - {c['frequency']}")
+                if conts:
+                    for c in conts: st.success(f"**{c['callsign']}** ({c['name']}) - {c['frequency']}")
+                else:
+                    st.write("No controllers online in Japan region.")
+                
                 st.write("**TRAFFIC AT AIRPORT**")
                 pilots = [p for p in v_data.get("pilots", []) if (p.get("arrival") == icao or p.get("departure") == icao)]
-                for p in pilots: st.info(f"**{p['callsign']}** | {p['departure']}➔{p['arrival']} | ALT: {p['altitude']}ft")
+                if pilots:
+                    for p in pilots: st.info(f"**{p['callsign']}** | {p['departure']}➔{p['arrival']} | ALT: {p['altitude']}ft")
+                else:
+                    st.write(f"No traffic reported for {icao}.")
 
     # --- CHECKLIST TAB ---
     with main_tab2:
