@@ -122,11 +122,13 @@ else:
 if os.path.exists(LINK_FILE):
     with open(LINK_FILE, "r", encoding="utf-8") as f: quick_links = json.load(f)
 else:
+    # デフォルトのリンクにノータムを追加
     quick_links = [
         {"name": "ATIS GURU", "url": "https://atis.guru/"},
         {"name": "TRANSITION ALT LIST", "url": "https://docs.google.com/spreadsheets/d/1uTvrw-5uoGPuzGyB8lEkhyn7TO_HaZQ6WB-5N6nH-NM/edit?gid=1698518120#gid=1698518120"},
         {"name": "SIMBRIEF", "url": "https://www.simbrief.com/system/dispatch.php"},
-        {"name": "NAVIGRAPH", "url": "https://charts.navigraph.com/"}
+        {"name": "NAVIGRAPH", "url": "https://charts.navigraph.com/"},
+        {"name": "FAA NOTAM SEARCH", "url": "https://notams.aim.faa.gov/notamSearch/nsapp.html#/"}
     ]
 
 # --- 3. Login Logic ---
@@ -157,7 +159,7 @@ else:
                         st.rerun()
 
         with s_tab2:
-            menu = st.radio("SELECT TOOL", ["PILOT LOCATIONS", "TIMERS", "OFP", "T/D CALC", "TURN RADIUS", "PAD", "WEATHER (METAR/ATIS)", "LOG", "FUEL CALC", "X-WIND CALC", "VATSIM & NOTAM"])
+            menu = st.radio("SELECT TOOL", ["PILOT LOCATIONS", "TIMERS", "OFP", "T/D CALC", "TURN RADIUS", "PAD", "WEATHER (METAR/ATIS)", "LOG", "FUEL CALC", "X-WIND CALC", "VATSIM TRAFFIC"])
 
     # --- MAIN CONTENT TABS ---
     main_tab1, main_tab2, main_tab3 = st.tabs(["MAIN TOOLS", "CHECKLIST", "MAINTENANCE"])
@@ -313,31 +315,43 @@ else:
             diff = abs(r_hdg - w_dir)
             st.metric("Crosswind", f"{abs(w_spd * math.sin(math.radians(diff))):.1f} KT")
 
-        elif menu == "VATSIM & NOTAM":
-            st.subheader("NOTAM & VATSIM TRAFFIC")
-            icao = st.text_input("AIRPORT ICAO", "RJTT").upper()
-            if icao:
-                # FAAサイトが埋め込み拒否されるため、直接リンクを提供
-                st.info("⚠️ FAA NOTAM Search は外部サイトでの確認が必要です。")
-                st.markdown(f'**[👉 CLICK HERE TO OPEN NOTAM FOR {icao}](https://notams.aim.faa.gov/notamSearch/nsidashboard.action?queryType=ALLICAO&icaoCode={icao})**', unsafe_allow_html=True)
+        elif menu == "VATSIM TRAFFIC":
+            st.subheader("VATSIM ONLINE TRAFFIC")
+            icao = st.text_input("AIRPORT ICAO", "RJTT").upper().strip()
             
             v_res = requests.get("https://data.vatsim.net/v3/vatsim-data.json")
             if v_res.status_code == 200:
                 v_data = v_res.json()
                 st.write("---")
-                st.write("**VATJPN ONLINE CONTROLLERS**")
-                conts = [c for c in v_data.get("controllers", []) if c["callsign"].startswith(("RJ", "RO"))]
-                if conts:
-                    for c in conts: st.success(f"**{c['callsign']}** ({c['name']}) - {c['frequency']}")
-                else:
-                    st.write("No controllers online in Japan region.")
                 
-                st.write("**TRAFFIC AT AIRPORT**")
-                pilots = [p for p in v_data.get("pilots", []) if (p.get("arrival") == icao or p.get("departure") == icao)]
-                if pilots:
-                    for p in pilots: st.info(f"**{p['callsign']}** | {p['departure']}➔{p['arrival']} | ALT: {p['altitude']}ft")
+                # --- 管制官 ---
+                st.write("**VATJPN ONLINE CONTROLLERS**")
+                conts = [c for c in v_data.get("controllers", []) if c.get("callsign", "").upper().startswith(("RJ", "RO"))]
+                if conts:
+                    for c in conts: st.success(f"**{c['callsign']}** ({c['name']}) - {c.get('frequency', 'N/A')}")
                 else:
-                    st.write(f"No traffic reported for {icao}.")
+                    st.write("📡 No controllers online in Japan region.")
+                
+                # --- トラフィック ---
+                st.write(f"**TRAFFIC AT {icao}**")
+                pilots = []
+                for p in v_data.get("pilots", []):
+                    fplan = p.get("flight_plan")
+                    # 複数ルートからICAOコードをチェック（直接またはflight_plan内）
+                    dep = (p.get("departure") or (fplan.get("departure") if fplan else "") or "").upper()
+                    arr = (p.get("arrival") or (fplan.get("arrival") if fplan else "") or "").upper()
+                    
+                    if dep == icao or arr == icao:
+                        pilots.append(p)
+
+                if pilots:
+                    for p in pilots:
+                        fplan = p.get("flight_plan")
+                        p_dep = (fplan.get("departure") if fplan else "???")
+                        p_arr = (fplan.get("arrival") if fplan else "???")
+                        st.info(f"**{p['callsign']}** | {p_dep} ➔ {p_arr} | ALT: {p.get('altitude', 0)}ft | {p.get('name', '')}")
+                else:
+                    st.write(f"🛬 No traffic reported for {icao} at the moment.")
 
     # --- CHECKLIST TAB ---
     with main_tab2:
