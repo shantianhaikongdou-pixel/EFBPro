@@ -9,7 +9,7 @@ import time
 import math
 from streamlit_drawable_canvas import st_canvas
 
-# --- Checklist Database ---
+# --- Checklist Database (全機体統合) ---
 cl_db = {
     "A350": {
         "COCKPIT PREP": ["PARKING BRAKE - SET", "ALL BATTERY SWITCH - ON", "EXTERNAL POWER - PUSH", "ADIRS (1, 2, 3) - NAV", "CREW SUPPLY - ON", "PACKS - AUTO", "NAV LIGHTS - ON", "LOGO LIGHTS - ON", "APU - MASTER-START", "NO SMOKING - AUTO", "NO MOBILE - AUTO", "EMERGENCY LIGHTS - ARMED", "FLIGHT DIRECTORS - ON", "ALTIMETERS - SET", "MCDU - SETUP", "FLT CTL PAGE - CHECK"],
@@ -89,7 +89,6 @@ st.markdown("""
     .stButton>button { background-color: #1DB954 !important; color: #FFFFFF !important; border-radius: 4px !important; font-weight: bold; width: 100%; border: none; }
     [data-testid="stSidebar"] { background-color: #121212; border-right: 1px solid #282828; min-width: 350px !important; }
     .stTabs [data-baseweb="tab-list"] { position: static !important; background-color: transparent !important; border-bottom: 1px solid #282828; }
-    
     div[role="radiogroup"] > label > div:first-child { display: none !important; }
     div[role="radiogroup"] > label {
         background-color: #1a1a1a !important; border: 1px solid #333 !important;
@@ -158,7 +157,7 @@ else:
                         st.rerun()
 
         with s_tab2:
-            menu = st.radio("SELECT TOOL", ["PILOT LOCATIONS", "TIMERS", "OFP", "TURN RADIUS", "PAD", "WEATHER (METAR/ATIS)", "LOG", "FUEL CALC", "X-WIND CALC", "VATJPN ONLINE"])
+            menu = st.radio("SELECT TOOL", ["PILOT LOCATIONS", "TIMERS", "OFP", "T/D CALC", "TURN RADIUS", "PAD", "WEATHER (METAR/ATIS)", "LOG", "FUEL CALC", "X-WIND CALC", "VATSIM & NOTAM"])
 
     # --- MAIN CONTENT TABS ---
     main_tab1, main_tab2, main_tab3 = st.tabs(["MAIN TOOLS", "CHECKLIST", "MAINTENANCE"])
@@ -220,6 +219,17 @@ else:
                 with info_col5: st.metric("DEST", sb.get('destination', {}).get('icao_code', "N/A"))
                 st.info(f"**ROUTE:** {sb.get('general', {}).get('route', 'N/A')}")
 
+        elif menu == "T/D CALC":
+            st.subheader("TOP OF DESCENT CALCULATOR")
+            c1, c2, c3 = st.columns(3)
+            curr_alt = c1.number_input("Current Alt (ft)", 0, 45000, 35000)
+            target_alt = c2.number_input("Target Alt (ft)", 0, 45000, 3000)
+            gs = c3.number_input("Ground Speed (kt)", 100, 600, 400)
+            dist = ((curr_alt - target_alt) / 1000) * 3
+            vs = gs * 5
+            st.metric("Start Descent at", f"{dist:.1f} NM from Target")
+            st.metric("Required VS", f"-{vs} fpm")
+
         elif menu == "TURN RADIUS":
             st.subheader("TURN RADIUS CALCULATOR")
             c1, c2 = st.columns(2)
@@ -231,21 +241,11 @@ else:
 
         elif menu == "PAD":
             st.subheader("FLIGHT MEMO / SCRATCH PAD")
-            # 赤ペン・消しゴムツールバー
             c1, c2, c3 = st.columns([1, 1, 2])
             draw_mode = c1.selectbox("TOOL", ["freedraw", "transform"], format_func=lambda x: "Pencil" if x=="freedraw" else "Selection/Eraser")
             stroke_color = c2.selectbox("COLOR", ["#FFFFFF", "#FF4B4B", "#121212"], format_func=lambda x: "WHITE" if x=="#FFFFFF" else "RED" if x=="#FF4B4B" else "ERASER")
             stroke_width = c3.slider("WIDTH", 1, 20, 3)
-
-            st_canvas(
-                fill_color="rgba(255, 165, 0, 0.3)",
-                stroke_width=stroke_width,
-                stroke_color=stroke_color,
-                background_color="#121212",
-                height=400,
-                drawing_mode=draw_mode,
-                key="canvas",
-            )
+            st_canvas(fill_color="rgba(255, 165, 0, 0.3)", stroke_width=stroke_width, stroke_color=stroke_color, background_color="#121212", height=400, drawing_mode=draw_mode, key="canvas")
             if st.button("CLEAR PAD"): st.rerun()
 
         elif menu == "WEATHER (METAR/ATIS)":
@@ -256,7 +256,6 @@ else:
                 if res.status_code == 200 and res.text.strip():
                     metar_raw = res.text.strip()
                     st.code(metar_raw, language="text")
-                    # --- METAR 要約 ---
                     st.markdown("### 📝 METAR SUMMARY")
                     sc1, sc2, sc3 = st.columns(3)
                     w = re.search(r"(\d{3}|VRB)(\d{2,3})(G\d{2,3})?KT", metar_raw)
@@ -274,41 +273,27 @@ else:
             if os.path.exists(DB_FILE):
                 with open(DB_FILE, "r", encoding="utf-8") as f: logs = json.load(f)
             else: logs = []
-
-            # SimBriefデータ安全取得 (Error 対策)
-            sb_data = st.session_state.get('sb_json')
-            if sb_data is None: sb_data = {}
+            sb_data = st.session_state.get('sb_json') or {}
             ac_info = sb_data.get('aircraft', {})
-            
             with st.form("flight_log_full_form", clear_on_submit=True):
                 c1, c2, c3 = st.columns(3)
                 log_date = c1.date_input("月 日～年", datetime.now())
                 log_ac_type = c2.text_input("航空機型式", value=ac_info.get('icaocode', ""))
                 log_reg = c3.text_input("登録記号", value=ac_info.get('reg', ""))
-                
                 c4, c5, c6, c7 = st.columns(4)
                 log_from = c4.text_input("FROM", value=sb_data.get('origin', {}).get('icao_code', ""))
                 log_to = c5.text_input("TO", value=sb_data.get('destination', {}).get('icao_code', ""))
                 log_dtime = c6.text_input("(D)TIME (UTC)")
                 log_atime = c7.text_input("(A)TIME (UTC)")
-                
                 c8, c9, c10 = st.columns(3)
                 log_content = c8.text_input("飛行内容", value="定期便")
                 log_toldg = c9.text_input("T/O LDG (回数)")
                 log_total_time = c10.text_input("飛行時間")
-                
                 c11, c12 = st.columns(2)
                 log_sign = c11.text_input("証明 (PILOT SIGN)")
                 log_extra = st.text_area("補足")
-
                 if st.form_submit_button("SAVE RECORD"):
-                    new_entry = {
-                        "date": str(log_date), "ac_type": log_ac_type.upper(), "reg": log_reg.upper(),
-                        "from": log_from.upper(), "to": log_to.upper(), "d_time": log_dtime,
-                        "a_time": log_atime, "content": log_content, "toldg": log_toldg,
-                        "total_time": log_total_time, "sign": log_sign, "extra": log_extra,
-                        "maint_status": "PENDING", "ts": time.time()
-                    }
+                    new_entry = {"date": str(log_date), "ac_type": log_ac_type.upper(), "reg": log_reg.upper(), "from": log_from.upper(), "to": log_to.upper(), "d_time": log_dtime, "a_time": log_atime, "content": log_content, "toldg": log_toldg, "total_time": log_total_time, "sign": log_sign, "extra": log_extra, "maint_status": "PENDING", "ts": time.time()}
                     logs.append(new_entry)
                     with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(logs, f, indent=4)
                     st.success("運行記録が保存されました！")
@@ -328,15 +313,21 @@ else:
             diff = abs(r_hdg - w_dir)
             st.metric("Crosswind", f"{abs(w_spd * math.sin(math.radians(diff))):.1f} KT")
 
-        elif menu == "VATJPN ONLINE":
-            st.subheader("VATJPN ONLINE CONTROLLERS")
+        elif menu == "VATSIM & NOTAM":
+            st.subheader("NOTAM & VATSIM TRAFFIC")
+            icao = st.text_input("AIRPORT ICAO", "RJTT").upper()
+            if icao:
+                st.markdown(f'<iframe src="https://notams.aim.faa.gov/notamSearch/nsidashboard.action?queryType=ALLICAO&icaoCode={icao}" width="100%" height="400"></iframe>', unsafe_allow_html=True)
             v_res = requests.get("https://data.vatsim.net/v3/vatsim-data.json")
             if v_res.status_code == 200:
                 v_data = v_res.json()
+                st.write("---")
+                st.write("**VATJPN ONLINE CONTROLLERS**")
                 conts = [c for c in v_data.get("controllers", []) if c["callsign"].startswith(("RJ", "RO"))]
-                if conts:
-                    for c in conts: st.success(f"**{c['callsign']}** ({c['name']}) - {c['frequency']}")
-                else: st.info("現在、日本国内にオンラインの管制官はいません。")
+                for c in conts: st.success(f"**{c['callsign']}** ({c['name']}) - {c['frequency']}")
+                st.write("**TRAFFIC AT AIRPORT**")
+                pilots = [p for p in v_data.get("pilots", []) if (p.get("arrival") == icao or p.get("departure") == icao)]
+                for p in pilots: st.info(f"**{p['callsign']}** | {p['departure']}➔{p['arrival']} | ALT: {p['altitude']}ft")
 
     # --- CHECKLIST TAB ---
     with main_tab2:
@@ -360,17 +351,14 @@ else:
             for idx, entry in enumerate(reversed(all_logs)):
                 status_color = "#1DB954" if entry.get("maint_status") == "RELEASED" else "#FF4B4B"
                 with st.expander(f"{entry['date']} | {entry['reg']} ({entry['from']} -> {entry['to']}) - {entry.get('maint_status', 'PENDING')}"):
-                    st.markdown(f"""
-                    **フライト詳細:**
-                    * **飛行内容:** {entry['content']} | **飛行時間:** {entry['total_time']} | **T/O LDG:** {entry['toldg']}
-                    * **補足:** {entry['extra']} | **署名:** {entry['sign']}
-                    """)
+                    st.markdown(f"**フライト詳細:**\n* **飛行内容:** {entry['content']} | **飛行時間:** {entry['total_time']} | **T/O LDG:** {entry['toldg']}\n* **補足:** {entry['extra']} | **署名:** {entry['sign']}")
                     st.markdown(f"<p style='color:{status_color}; font-weight:bold;'>STATUS: {entry.get('maint_status', 'PENDING')}</p>", unsafe_allow_html=True)
                     if entry.get("maint_status") == "PENDING":
                         if st.button(f"機体リリースを承認 (IDX:{idx})", key=f"maint_btn_{idx}"):
                             actual_idx = len(all_logs) - 1 - idx
                             all_logs[actual_idx]["maint_status"] = "RELEASED"
                             with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(all_logs, f, indent=4)
+                            st.balloons()
                             st.rerun()
 
     # --- リアルタイム更新 ---
