@@ -119,17 +119,22 @@ if os.path.exists(POS_FILE):
 else:
     p_pos = {"ANA": "RJTT", "JAL": "RJTT", "HDJT": "RJTT", "Delta": "KATL", "Lufthansa": "EDDF"}
 
+# --- 固定クイックリンクの設定 ---
+default_links = [
+    {"name": "ATIS GURU", "url": "https://atis.guru/"},
+    {"name": "TRANSITION ALT LIST", "url": "https://docs.google.com/spreadsheets/d/1uTvrw-5uoGPuzGyB8lEkhyn7TO_HaZQ6WB-5N6nH-NM/edit?gid=1698518120#gid=1698518120"},
+    {"name": "SIMBRIEF", "url": "https://www.simbrief.com/system/dispatch.php"},
+    {"name": "NAVIGRAPH", "url": "https://charts.navigraph.com/"},
+    {"name": "FAA NOTAM SEARCH", "url": "https://notams.aim.faa.gov/notamSearch/nsapp.html#/"}
+]
+
 if os.path.exists(LINK_FILE):
     with open(LINK_FILE, "r", encoding="utf-8") as f: quick_links = json.load(f)
+    # NOTAMサイトが含まれていない場合のみ追加（重複防止）
+    if not any("notams.aim.faa.gov" in l["url"] for l in quick_links):
+        quick_links.append({"name": "FAA NOTAM SEARCH", "url": "https://notams.aim.faa.gov/notamSearch/nsapp.html#/"})
 else:
-    # デフォルトのリンクにノータムを追加
-    quick_links = [
-        {"name": "ATIS GURU", "url": "https://atis.guru/"},
-        {"name": "TRANSITION ALT LIST", "url": "https://docs.google.com/spreadsheets/d/1uTvrw-5uoGPuzGyB8lEkhyn7TO_HaZQ6WB-5N6nH-NM/edit?gid=1698518120#gid=1698518120"},
-        {"name": "SIMBRIEF", "url": "https://www.simbrief.com/system/dispatch.php"},
-        {"name": "NAVIGRAPH", "url": "https://charts.navigraph.com/"},
-        {"name": "FAA NOTAM SEARCH", "url": "https://notams.aim.faa.gov/notamSearch/nsapp.html#/"}
-    ]
+    quick_links = default_links
 
 # --- 3. Login Logic ---
 if not st.session_state['authenticated']:
@@ -159,7 +164,7 @@ else:
                         st.rerun()
 
         with s_tab2:
-            menu = st.radio("SELECT TOOL", ["PILOT LOCATIONS", "TIMERS", "OFP", "T/D CALC", "TURN RADIUS", "PAD", "WEATHER (METAR/ATIS)", "LOG", "FUEL CALC", "X-WIND CALC", "VATSIM TRAFFIC"])
+            menu = st.radio("SELECT TOOL", ["PILOT LOCATIONS", "TIMERS", "OFP", "T/D CALC", "TURN RADIUS", "PAD", "WEATHER (METAR/ATIS)", "LOG", "UNIT CONVERTER", "X-WIND CALC", "VATSIM TRAFFIC"])
 
     # --- MAIN CONTENT TABS ---
     main_tab1, main_tab2, main_tab3 = st.tabs(["MAIN TOOLS", "CHECKLIST", "MAINTENANCE"])
@@ -198,24 +203,46 @@ else:
                     else: st.warning("TIME UP!"); st.session_state['timer_end'] = None
 
         elif menu == "OFP":
-            st.subheader("SIMBRIEF OFP")
+            st.subheader("SIMBRIEF OFP & PERFORMANCE")
             if st.button("FETCH FROM SIMBRIEF"):
                 res = requests.get(f"https://www.simbrief.com/api/xml.fetcher.php?userid={SB_USER}&json=1")
                 if res.status_code == 200:
                     data = res.json()
                     if "params" in data:
                         st.session_state['sb_json'] = data
-                        st.success("OFP IMPORTED")
+                        st.success("OFP & PERFORMANCE DATA IMPORTED")
                         st.rerun()
                     else:
                         st.error("フライトプランが見つかりません。SimBriefで GENERATE OFP 済みですか？")
             
             if st.session_state.get('sb_json'):
                 sb = st.session_state['sb_json']
+                
+                # パフォーマンスデータ抽出 (V-Speeds & Trim)
+                to_data = sb.get('takeoff', {})
+                v1, vr, v2 = to_data.get('v1', '--'), to_data.get('vr', '--'), to_data.get('v2', '--')
+                trim = to_data.get('trim', 'N/A')
+                tow = sb.get('weights', {}).get('est_takeoff_weight', '0')
+
+                # V-Speeds & Trim 表示 (オシャレなカード形式)
+                st.markdown(f"""
+                <div style="background: #1a1a1a; padding: 20px; border-radius: 10px; border-left: 5px solid #1DB954; margin-bottom: 20px;">
+                    <p style="color: #888; margin: 0; font-size: 0.9em;">TAKEOFF PERFORMANCE</p>
+                    <div style="display: flex; justify-content: space-around; text-align: center; padding: 15px 0;">
+                        <div><div style="color:#888; font-size:0.8em;">V1</div><h1 style="margin:0;">{v1}</h1></div>
+                        <div><div style="color:#888; font-size:0.8em;">VR</div><h1 style="margin:0;">{vr}</h1></div>
+                        <div><div style="color:#888; font-size:0.8em;">V2</div><h1 style="margin:0;">{v2}</h1></div>
+                    </div>
+                    <div style="text-align: center; border-top: 1px solid #333; pt-10px; margin-top: 10px;">
+                        <span style="color:#888;">STAB TRIM:</span> <span style="color:#1DB954; font-weight:bold; font-size:1.2em;">{trim}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
                 st.markdown("### Flight Information")
                 info_col1, info_col2, info_col3, info_col4, info_col5 = st.columns(5)
                 with info_col1: st.metric("CALLSIGN", sb.get('atc', {}).get('callsign', "N/A"))
-                with info_col2: st.metric("REG", sb.get('aircraft', {}).get('reg', "N/A"))
+                with info_col2: st.metric("TOW", f"{int(tow)/1000:.1f} T")
                 with info_col3: st.metric("TYPE", sb.get('aircraft', {}).get('icaocode', "N/A"))
                 with info_col4: st.metric("ORIGIN", sb.get('origin', {}).get('icao_code', "N/A"))
                 with info_col5: st.metric("DEST", sb.get('destination', {}).get('icao_code', "N/A"))
@@ -251,24 +278,37 @@ else:
             if st.button("CLEAR PAD"): st.rerun()
 
         elif menu == "WEATHER (METAR/ATIS)":
-            st.subheader("METAR & ATIS")
-            icao_input = st.text_input("AIRPORT ICAO", "RJTT").upper()
+            st.subheader("🌤️ AIRPORT WEATHER")
+            icao_input = st.text_input("AIRPORT ICAO", "RJTT").upper().strip()
             if icao_input:
                 res = requests.get(f"https://metar.vatsim.net/metar.php?id={icao_input}")
                 if res.status_code == 200 and res.text.strip():
-                    metar_raw = res.text.strip()
-                    st.code(metar_raw, language="text")
-                    st.markdown("### 📝 METAR SUMMARY")
-                    sc1, sc2, sc3 = st.columns(3)
-                    w = re.search(r"(\d{3}|VRB)(\d{2,3})(G\d{2,3})?KT", metar_raw)
-                    v = re.search(r"\b(\d{4})\b", metar_raw)
-                    q = re.search(r"Q(\d{4})", metar_raw)
-                    if w: sc1.metric("WIND", w.group(0))
-                    if v: sc2.metric("VIS", f"{v.group(1)}m")
-                    if q: sc3.metric("QNH", q.group(1))
-                    if "TS" in metar_raw: st.error("⚠️ THUNDERSTORM DETECTED")
-                    if "FG" in metar_raw or "BR" in metar_raw: st.warning("⚠️ LOW VISIBILITY")
-                    st.markdown(f'<a href="https://atis.guru/{icao_input}" target="_blank">Open ATIS.GURU for {icao_input}</a>', unsafe_allow_html=True)
+                    metar = res.text.strip()
+                    # データ抽出 (Regex)
+                    w = re.search(r"(\d{3}|VRB)(\d{2,3})KT", metar)
+                    v = re.search(r"\b(\d{4})\b", metar)
+                    t = re.search(r"(\d{2})/(\s|M)(\d{2})", metar)
+                    q = re.search(r"Q(\d{4})", metar)
+
+                    # 画像モチーフのオシャレなリストスタイル
+                    st.markdown(f"""
+                    <div style="background: #12151a; padding: 25px; border-radius: 5px; font-family: sans-serif;">
+                        <div style="color: #6da5ff; font-weight: bold; margin-bottom: 15px; font-family: monospace; font-size: 1.1em;">{metar}</div>
+                        <div style="border-bottom: 1px solid #2d343e; padding: 8px 0; display: flex; justify-content: space-between;">
+                            <span style="color: #8892a0;">Wind</span> <span style="color: #fff;">{w.group(1)+'° at '+w.group(2)+' KT' if w else 'N/A'}</span>
+                        </div>
+                        <div style="border-bottom: 1px solid #2d343e; padding: 8px 0; display: flex; justify-content: space-between;">
+                            <span style="color: #8892a0;">Visibility</span> <span style="color: #fff;">{v.group(1)+' m or greater' if v else '9999 m'}</span>
+                        </div>
+                        <div style="border-bottom: 1px solid #2d343e; padding: 8px 0; display: flex; justify-content: space-between;">
+                            <span style="color: #8892a0;">Temperature</span> <span style="color: #fff;">{t.group(1) if t else '--'}° C</span>
+                        </div>
+                        <div style="border-bottom: 1px solid #2d343e; padding: 8px 0; display: flex; justify-content: space-between;">
+                            <span style="color: #8892a0;">Altimeter</span> <span style="color: #fff;">{q.group(1) if q else '----'} hPa</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.markdown(f'<div style="margin-top:10px;"><a href="https://atis.guru/{icao_input}" target="_blank" style="color:#1DB954; text-decoration:none;">Open ATIS.GURU</a></div>', unsafe_allow_html=True)
 
         elif menu == "LOG":
             st.subheader("PILOT FLIGHT LOG & MAINTENANCE RECORD")
@@ -301,11 +341,22 @@ else:
                     st.success("運行記録が保存されました！")
                     st.rerun()
 
-        elif menu == "FUEL CALC":
-            st.subheader("FUEL CALCULATOR")
-            rem = st.number_input("REMAINING (kg)", 0)
-            req = st.number_input("REQUIRED (kg)", 0)
-            if st.button("CALC"): st.metric("REFUEL", f"{max(0, req-rem)} kg")
+        elif menu == "UNIT CONVERTER":
+            st.subheader("⚖️ UNIT CONVERTER")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write("**Weight (KG ⟷ LB)**")
+                kg = st.number_input("Kilograms", value=0)
+                st.code(f"{kg * 2.20462:.1f} LB")
+                lb = st.number_input("Pounds", value=0)
+                st.code(f"{lb / 2.20462:.1f} KG")
+            with col2:
+                st.write("**Volume (L ⟷ KG JetA1)**")
+                liter = st.number_input("Liters", value=0)
+                st.code(f"{liter * 0.8:.1f} KG")
+                st.write("**Altitude (FT ⟷ M)**")
+                feet = st.number_input("Feet", value=0)
+                st.code(f"{feet * 0.3048:.1f} M")
 
         elif menu == "X-WIND CALC":
             st.subheader("X-WIND CALCULATOR")
@@ -337,10 +388,8 @@ else:
                 pilots = []
                 for p in v_data.get("pilots", []):
                     fplan = p.get("flight_plan")
-                    # 複数ルートからICAOコードをチェック（直接またはflight_plan内）
                     dep = (p.get("departure") or (fplan.get("departure") if fplan else "") or "").upper()
                     arr = (p.get("arrival") or (fplan.get("arrival") if fplan else "") or "").upper()
-                    
                     if dep == icao or arr == icao:
                         pilots.append(p)
 
