@@ -74,7 +74,7 @@ if os.path.exists(LINK_FILE):
 else:
     quick_links = default_links
 
-# Checklist DB
+# Checklist DB (All Aircraft)
 cl_db = {
     "A350": {
         "COCKPIT PREP": ["PARKING BRAKE - SET", "ALL BATTERY SWITCH - ON", "EXTERNAL POWER - PUSH", "ADIRS (1, 2, 3) - NAV", "CREW SUPPLY - ON", "PACKS - AUTO", "NAV LIGHTS - ON", "LOGO LIGHTS - ON", "APU - MASTER-START", "NO SMOKING - AUTO", "NO MOBILE - AUTO", "EMERGENCY LIGHTS - ARMED", "FLIGHT DIRECTORS - ON", "ALTIMETERS - SET", "MCDU - SETUP", "FLT CTL PAGE - CHECK"],
@@ -315,7 +315,6 @@ else:
                 log_extra = st.text_area("補足")
                 
                 if st.form_submit_button("SAVE RECORD"):
-                    # ここではLOGだけ保存（Fleetは整備士承認で更新）
                     new_entry = {
                         "date": str(log_date), "ac_type": log_ac_type.upper(), "reg": log_reg.upper(), 
                         "from": log_from.upper(), "to": log_to.upper(), "d_time": log_dtime, 
@@ -388,7 +387,6 @@ else:
 
     with main_tab3:
         st.subheader("EFB Pro / Fleet & Maintenance System")
-        # タブを開くたびに最新データをロード
         fleet_data = load_fleet()
         f_tab1, f_tab2, f_tab3 = st.tabs(["機材一覧", "機体詳細検索", "整備士承認 (Maintenance Log)"])
         
@@ -426,7 +424,6 @@ else:
             
             if not all_logs: st.info("未処理の記録はありません。")
             else:
-                # 最新順に表示
                 for idx, entry in enumerate(reversed(all_logs)):
                     status_released = entry.get("maint_status") == "RELEASED"
                     with st.expander(f"{entry['date']} | {entry['reg']} ({entry['from']} -> {entry['to']}) - {entry.get('maint_status', 'PENDING')}"):
@@ -438,11 +435,9 @@ else:
                             st.error("STATUS: PENDING")
                             if st.button(f"機体リリースを承認 (IDX:{idx})", key=f"maint_btn_{idx}"):
                                 actual_idx = len(all_logs) - 1 - idx
-                                # 1. ログを更新
                                 all_logs[actual_idx]["maint_status"] = "RELEASED"
                                 with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(all_logs, f, indent=4)
                                 
-                                # 2. Fleet（機材一覧）へ反映
                                 reg_key = entry['reg'].upper()
                                 if reg_key in fleet_data:
                                     fleet_data[reg_key]["現在地"] = entry['to'].upper()
