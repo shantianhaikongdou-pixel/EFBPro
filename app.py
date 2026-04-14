@@ -42,12 +42,11 @@ POS_FILE = "pilot_positions.json"
 FLEET_FILE = "fleet_status.json"
 SB_USER = "906331" 
 
-# Fleet Data Initialize
-if os.path.exists(FLEET_FILE):
-    with open(FLEET_FILE, "r", encoding="utf-8") as f:
-        fleet_data = json.load(f)
-else:
-    fleet_data = {
+def load_fleet():
+    if os.path.exists(FLEET_FILE):
+        with open(FLEET_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {
         "JA01JL": {"航空会社": "JAL", "機種": "Airbus A350-941", "現在地": "RJTT", "最終飛行": "なし", "整備備考": "A-Check完了"},
         "JA822J": {"航空会社": "JAL", "機種": "Boeing 787-8", "現在地": "RJAA", "最終飛行": "なし", "整備備考": "タイヤ摩耗あり"}
     }
@@ -316,7 +315,7 @@ else:
                 log_extra = st.text_area("補足")
                 
                 if st.form_submit_button("SAVE RECORD"):
-                    # 1. ログの保存 (PENDING状態で保存)
+                    # ここではLOGだけ保存（Fleetは整備士承認で更新）
                     new_entry = {
                         "date": str(log_date), "ac_type": log_ac_type.upper(), "reg": log_reg.upper(), 
                         "from": log_from.upper(), "to": log_to.upper(), "d_time": log_dtime, 
@@ -326,7 +325,7 @@ else:
                     }
                     logs.append(new_entry)
                     with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(logs, f, indent=4)
-                    st.success("運行記録を保存したよ！整備士タブで承認するとFleetに反映されるよ。")
+                    st.success("運行記録を保存したよ！整備士タブで機体リリースを承認してね。")
                     st.rerun()
 
         elif menu == "UNIT CONVERTER":
@@ -389,6 +388,8 @@ else:
 
     with main_tab3:
         st.subheader("EFB Pro / Fleet & Maintenance System")
+        # タブを開くたびに最新データをロード
+        fleet_data = load_fleet()
         f_tab1, f_tab2, f_tab3 = st.tabs(["機材一覧", "機体詳細検索", "整備士承認 (Maintenance Log)"])
         
         with f_tab1:
@@ -403,7 +404,7 @@ else:
             search_reg = st.text_input("レジ番を入力").upper()
             if search_reg in fleet_data:
                 data = fleet_data[search_reg]
-                status_ok = any(word in data["整備備考"] for word in ["異常なし", "完了", "正常"])
+                status_ok = any(word in str(data["整備備考"]) for word in ["異常なし", "完了", "正常", "A-Check"])
                 st.divider()
                 st.write(f"### {data['航空会社']} / {search_reg}")
                 col1, col2 = st.columns(2)
@@ -425,32 +426,33 @@ else:
             
             if not all_logs: st.info("未処理の記録はありません。")
             else:
+                # 最新順に表示
                 for idx, entry in enumerate(reversed(all_logs)):
                     status_released = entry.get("maint_status") == "RELEASED"
                     with st.expander(f"{entry['date']} | {entry['reg']} ({entry['from']} -> {entry['to']}) - {entry.get('maint_status', 'PENDING')}"):
                         st.markdown(f"**フライト詳細:**\n* **飛行内容:** {entry['content']} | **飛行時間:** {entry['total_time']} | **T/O LDG:** {entry['toldg']}")
                         st.markdown(f"**補足:** {entry['extra']} | **署名:** {entry['sign']}")
+                        
                         if status_released: st.success("STATUS: RELEASED")
                         else:
                             st.error("STATUS: PENDING")
                             if st.button(f"機体リリースを承認 (IDX:{idx})", key=f"maint_btn_{idx}"):
                                 actual_idx = len(all_logs) - 1 - idx
-                                # 1. ログのステータスをRELEASEDに更新
+                                # 1. ログを更新
                                 all_logs[actual_idx]["maint_status"] = "RELEASED"
-                                with open(DB_FILE, "w", encoding="utf-8") as f: 
-                                    json.dump(all_logs, f, indent=4)
+                                with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(all_logs, f, indent=4)
                                 
-                                # 2. Fleet（機材一覧）への自動反映ロジック (統合部分)
+                                # 2. Fleet（機材一覧）へ反映
                                 reg_key = entry['reg'].upper()
                                 if reg_key in fleet_data:
                                     fleet_data[reg_key]["現在地"] = entry['to'].upper()
                                     fleet_data[reg_key]["最終飛行"] = f"{entry['date']} {entry['content']}"
-                                    fleet_data[reg_key]["整備備考"] = f"{entry['total_time']}飛行 整備完了"
+                                    fleet_data[reg_key]["整備備考"] = f"整備完了 ({entry['total_time']})"
                                     with open(FLEET_FILE, "w", encoding="utf-8") as f:
                                         json.dump(fleet_data, f, indent=4, ensure_ascii=False)
-                                    st.success(f"{reg_key} のデータをFleetに反映したよ！")
+                                    st.success(f"{reg_key} のステータスを更新したよ！")
                                 else:
-                                    st.warning(f"ログは承認したけど、機体 {reg_key} がFleetに登録されてないよ。")
+                                    st.warning(f"{reg_key} が機材リストに見つからなかったよ。")
                                 
                                 st.balloons()
                                 st.rerun()
