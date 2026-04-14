@@ -110,13 +110,30 @@ SB_USER = "906331"
 if 'authenticated' not in st.session_state: st.session_state['authenticated'] = False
 if 'sb_json' not in st.session_state: st.session_state['sb_json'] = None
 
+# --- 内蔵機材データ (Fleet Data) ---
+fleet_data = {
+    "JA01JL": {
+        "航空会社": "JAL",
+        "機種": "Airbus A350-941",
+        "現在地": "RJTT",
+        "最終飛行": "2026/04/13 JL902",
+        "整備備考": "A-Check完了。異常なし"
+    },
+    "JA822J": {
+        "航空会社": "JAL",
+        "機種": "Boeing 787-8",
+        "現在地": "RJAA",
+        "最終飛行": "2026/04/14 JL712",
+        "整備備考": "タイヤ摩耗あり。次回ステイ時に交換"
+    }
+}
+
 # --- Data Load ---
 if os.path.exists(POS_FILE):
     with open(POS_FILE, "r", encoding="utf-8") as f: p_pos = json.load(f)
 else:
     p_pos = {"ANA": "RJTT", "JAL": "RJTT", "HDJT": "RJTT", "Delta": "KATL", "Lufthansa": "EDDF"}
 
-# --- 固定クイックリンクの設定 ---
 default_links = [
     {"name": "ATIS GURU", "url": "https://atis.guru/"},
     {"name": "TRANSITION ALT LIST", "url": "https://docs.google.com/spreadsheets/d/1uTvrw-5uoGPuzGyB8lEkhyn7TO_HaZQ6WB-5N6nH-NM/edit?gid=1698518120#gid=1698518120"},
@@ -127,8 +144,6 @@ default_links = [
 
 if os.path.exists(LINK_FILE):
     with open(LINK_FILE, "r", encoding="utf-8") as f: quick_links = json.load(f)
-    if not any("notams.aim.faa.gov" in l["url"] for l in quick_links):
-        quick_links.append({"name": "FAA NOTAM SEARCH", "url": "https://notams.aim.faa.gov/notamSearch/nsapp.html#/"})
 else:
     quick_links = default_links
 
@@ -148,7 +163,6 @@ else:
         with s_tab1:
             for link in quick_links:
                 st.markdown(f'<a href="{link["url"]}" target="_blank" style="color:#1DB954; text-decoration:none; font-weight:bold; display:block; margin:5px 0;">{link["name"]}</a>', unsafe_allow_html=True)
-            
             st.markdown("---")
             with st.expander("ADD NEW LINK"):
                 with st.form("add_link_form", clear_on_submit=True):
@@ -163,7 +177,7 @@ else:
             menu = st.radio("SELECT TOOL", ["PILOT LOCATIONS", "OFP", "T/D CALC", "TURN RADIUS", "PAD", "WEATHER (METAR/ATIS)", "LOG", "UNIT CONVERTER", "X-WIND CALC", "VATSIM TRAFFIC"])
 
     # --- MAIN CONTENT TABS ---
-    main_tab1, main_tab2, main_tab3 = st.tabs(["MAIN TOOLS", "CHECKLIST", "MAINTENANCE"])
+    main_tab1, main_tab2, main_tab3 = st.tabs(["MAIN TOOLS", "CHECKLIST", "MAINTENANCE & FLEET"])
 
     with main_tab1:
         if menu == "PILOT LOCATIONS":
@@ -233,9 +247,9 @@ else:
         elif menu == "TURN RADIUS":
             st.subheader("TURN RADIUS CALCULATOR")
             c1, c2 = st.columns(2)
-            gs = c1.number_input("Ground Speed (KT)", 50, 600, 200)
-            bank = c2.number_input("Bank Angle (deg)", 10, 45, 25)
-            radius = (gs**2) / (11.26 * math.tan(math.radians(bank)))
+            gs_tr = c1.number_input("Ground Speed (KT)", 50, 600, 200)
+            bank_tr = c2.number_input("Bank Angle (deg)", 10, 45, 25)
+            radius = (gs_tr**2) / (11.26 * math.tan(math.radians(bank_tr)))
             st.metric("Turn Radius", f"{radius:.2f} ft")
             st.metric("Turn Radius (NM)", f"{(radius / 6076.12):.2f} NM")
 
@@ -256,36 +270,22 @@ else:
                 if res.status_code == 200 and res.text.strip():
                     metar = res.text.strip()
                     w = re.search(r"(\d{3}|VRB)(\d{2,3})KT", metar)
-                    v = re.search(r"\b(\d{4})\b", metar)
                     t_d = re.search(r"(\d{2})/(M?\d{2})", metar)
                     q = re.search(r"Q(\d{4})", metar)
                     a = re.search(r"A(\d{4})", metar)
-                    
                     humidity = "N/A"
                     if t_d:
                         temp = int(t_d.group(1))
                         dew = int(t_d.group(2).replace('M', '-'))
                         rh = 100 - 5 * (temp - dew)
                         humidity = f"{max(0, min(100, rh))}%"
-
                     st.markdown(f"""
                     <div style="background: #12151a; padding: 25px; border-radius: 5px; font-family: sans-serif;">
                         <div style="color: #6da5ff; font-weight: bold; margin-bottom: 15px; font-family: monospace;">{metar}</div>
-                        <div style="border-bottom: 1px solid #2d343e; padding: 8px 0; display: flex; justify-content: space-between;">
-                            <span style="color: #8892a0;">Wind</span> <span style="color: #fff;">{w.group(1)+'° at '+w.group(2)+' KT' if w else 'N/A'}</span>
-                        </div>
-                        <div style="border-bottom: 1px solid #2d343e; padding: 8px 0; display: flex; justify-content: space-between;">
-                            <span style="color: #8892a0;">Temperature</span> <span style="color: #fff;">{t_d.group(1) if t_d else '--'}° C</span>
-                        </div>
-                        <div style="border-bottom: 1px solid #2d343e; padding: 8px 0; display: flex; justify-content: space-between;">
-                            <span style="color: #8892a0;">Dew point</span> <span style="color: #fff;">{t_d.group(2).replace('M', '-') if t_d else '--'}° C</span>
-                        </div>
-                        <div style="border-bottom: 1px solid #2d343e; padding: 8px 0; display: flex; justify-content: space-between;">
-                            <span style="color: #8892a0;">Humidity</span> <span style="color: #fff;">{humidity}</span>
-                        </div>
-                        <div style="border-bottom: 1px solid #2d343e; padding: 8px 0; display: flex; justify-content: space-between;">
-                            <span style="color: #8892a0;">Altimeter</span> <span style="color: #fff;">{q.group(1) if q else '----'} hPa ({a.group(1)[:2]+'.'+a.group(1)[2:] if a else '--.--'} inHg)</span>
-                        </div>
+                        <div style="border-bottom: 1px solid #2d343e; padding: 8px 0; display: flex; justify-content: space-between;"><span style="color: #8892a0;">Wind</span> <span style="color: #fff;">{w.group(1)+'° at '+w.group(2)+' KT' if w else 'N/A'}</span></div>
+                        <div style="border-bottom: 1px solid #2d343e; padding: 8px 0; display: flex; justify-content: space-between;"><span style="color: #8892a0;">Temperature</span> <span style="color: #fff;">{t_d.group(1) if t_d else '--'}° C</span></div>
+                        <div style="border-bottom: 1px solid #2d343e; padding: 8px 0; display: flex; justify-content: space-between;"><span style="color: #8892a0;">Humidity</span> <span style="color: #fff;">{humidity}</span></div>
+                        <div style="border-bottom: 1px solid #2d343e; padding: 8px 0; display: flex; justify-content: space-between;"><span style="color: #8892a0;">Altimeter</span> <span style="color: #fff;">{q.group(1) if q else '----'} hPa ({a.group(1)[:2]+'.'+a.group(1)[2:] if a else '--.--'} inHg)</span></div>
                     </div>
                     """, unsafe_allow_html=True)
                     st.markdown(f'<div style="margin-top:10px;"><a href="https://atis.guru/{icao_input}" target="_blank" style="color:#1DB954; text-decoration:none;">Open ATIS.GURU</a></div>', unsafe_allow_html=True)
@@ -348,58 +348,82 @@ else:
 
         elif menu == "VATSIM TRAFFIC":
             st.subheader("VATSIM ONLINE TRAFFIC")
-            icao = st.text_input("AIRPORT ICAO", "RJTT").upper().strip()
+            vatsim_icao = st.text_input("AIRPORT ICAO", "RJTT", key="vatsim_icao").upper().strip()
             v_res = requests.get("https://data.vatsim.net/v3/vatsim-data.json")
             if v_res.status_code == 200:
                 v_data = v_res.json()
-                st.write("---")
                 st.write("**VATJPN ONLINE CONTROLLERS**")
                 conts = [c for c in v_data.get("controllers", []) if c.get("callsign", "").upper().startswith(("RJ", "RO"))]
                 if conts:
                     for c in conts: st.success(f"**{c['callsign']}** ({c['name']}) - {c.get('frequency', 'N/A')}")
-                else: st.write("📡 No controllers online in Japan region.")
-                
-                st.write(f"**TRAFFIC AT {icao}**")
+                else: st.write("📡 No controllers online.")
+                st.write(f"**TRAFFIC AT {vatsim_icao}**")
                 pilots = []
                 for p in v_data.get("pilots", []):
                     fplan = p.get("flight_plan")
                     dep = (p.get("departure") or (fplan.get("departure") if fplan else "") or "").upper()
                     arr = (p.get("arrival") or (fplan.get("arrival") if fplan else "") or "").upper()
-                    if dep == icao or arr == icao: pilots.append(p)
-
+                    if dep == vatsim_icao or arr == vatsim_icao: pilots.append(p)
                 if pilots:
                     for p in pilots:
                         fplan = p.get("flight_plan")
                         st.info(f"**{p['callsign']}** | {(fplan.get('departure') if fplan else '???')} ➔ {(fplan.get('arrival') if fplan else '???')} | ALT: {p.get('altitude', 0)}ft")
-                else: st.write(f"🛬 No traffic reported for {icao}.")
+                else: st.write(f"🛬 No traffic reported for {vatsim_icao}.")
 
-    # --- CHECKLIST TAB (空白削除 & 構成見直し) ---
     with main_tab2:
         st.subheader("AIRCRAFT CHECKLIST")
         ac_type = st.selectbox("SELECT AIRCRAFT", list(cl_db.keys()))
         phase = st.radio("SELECT PHASE", list(cl_db[ac_type].keys()), horizontal=True)
-        st.markdown("---")
         st.markdown(f"### {ac_type} - {phase}")
         for item in cl_db[ac_type][phase]:
             st.checkbox(item, key=f"main_cl_{ac_type}_{phase}_{item}")
         if st.button("RESET CURRENT PHASE"): st.rerun()
 
-    # --- MAINTENANCE TAB ---
     with main_tab3:
-        st.subheader("整備士確認 (MAINTENANCE LOG)")
-        if os.path.exists(DB_FILE):
-            with open(DB_FILE, "r", encoding="utf-8") as f: all_logs = json.load(f)
-        else: all_logs = []
-        if not all_logs: st.info("未処理の記録はありません。")
-        else:
-            for idx, entry in enumerate(reversed(all_logs)):
-                status_color = "#1DB954" if entry.get("maint_status") == "RELEASED" else "#FF4B4B"
-                with st.expander(f"{entry['date']} | {entry['reg']} ({entry['from']} -> {entry['to']}) - {entry.get('maint_status', 'PENDING')}"):
-                    st.markdown(f"**フライト詳細:**\n* **飛行内容:** {entry['content']} | **飛行時間:** {entry['total_time']} | **T/O LDG:** {entry['toldg']}\n* **補足:** {entry['extra']} | **署名:** {entry['sign']}")
-                    st.markdown(f"<p style='color:{status_color}; font-weight:bold;'>STATUS: {entry.get('maint_status', 'PENDING')}</p>", unsafe_allow_html=True)
-                    if entry.get("maint_status") == "PENDING":
-                        if st.button(f"機体リリースを承認 (IDX:{idx})", key=f"maint_btn_{idx}"):
-                            actual_idx = len(all_logs) - 1 - idx
-                            all_logs[actual_idx]["maint_status"] = "RELEASED"
-                            with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(all_logs, f, indent=4)
-                            st.balloons(); st.rerun()
+        st.subheader("EFB Pro / Fleet & Maintenance System")
+        f_tab1, f_tab2, f_tab3 = st.tabs(["機材一覧", "機体詳細検索", "整備士承認 (Maintenance Log)"])
+        
+        with f_tab1:
+            st.subheader("登録機材リスト")
+            for reg, info in fleet_data.items():
+                st.write(f"**{reg}** | {info['航空会社']} | {info['機種']}")
+        
+        with f_tab2:
+            st.subheader("機体詳細検索")
+            search_reg = st.text_input("レジ番を入力").upper()
+            if search_reg in fleet_data:
+                data = fleet_data[search_reg]
+                status_ok = any(word in data["整備備考"] for word in ["異常なし", "完了", "正常"])
+                st.divider()
+                st.write(f"### {data['航空会社']} / {search_reg}")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("機種", data["機種"])
+                    st.metric("現在地", data["現在地"])
+                with col2:
+                    if status_ok: st.success("Status: Good")
+                    else: st.error("Status: Maintenance Required")
+                    st.write(f"**最終飛行:** {data['最終飛行']}")
+                    st.write(f"**整備備考:** {data['整備備考']}")
+            elif search_reg: st.error("該当機体なし")
+
+        with f_tab3:
+            st.subheader("整備士確認ログ")
+            if os.path.exists(DB_FILE):
+                with open(DB_FILE, "r", encoding="utf-8") as f: all_logs = json.load(f)
+            else: all_logs = []
+            if not all_logs: st.info("未処理の記録はありません。")
+            else:
+                for idx, entry in enumerate(reversed(all_logs)):
+                    status_released = entry.get("maint_status") == "RELEASED"
+                    with st.expander(f"{entry['date']} | {entry['reg']} ({entry['from']} -> {entry['to']}) - {entry.get('maint_status', 'PENDING')}"):
+                        st.markdown(f"**フライト詳細:**\n* **飛行内容:** {entry['content']} | **飛行時間:** {entry['total_time']} | **T/O LDG:** {entry['toldg']}")
+                        st.markdown(f"**補足:** {entry['extra']} | **署名:** {entry['sign']}")
+                        if status_released: st.success("STATUS: RELEASED")
+                        else:
+                            st.error("STATUS: PENDING")
+                            if st.button(f"機体リリースを承認 (IDX:{idx})", key=f"maint_btn_{idx}"):
+                                actual_idx = len(all_logs) - 1 - idx
+                                all_logs[actual_idx]["maint_status"] = "RELEASED"
+                                with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(all_logs, f, indent=4)
+                                st.balloons(); st.rerun()
