@@ -9,7 +9,73 @@ import time
 import math
 from streamlit_drawable_canvas import st_canvas
 
-# --- Checklist Database (全機体統合) ---
+# --- 1. Page Configuration ---
+st.set_page_config(page_title="EFBPro | Flight Portal", layout="wide")
+
+# --- CSS Styling ---
+st.markdown("""
+    <style>
+    .stApp { background-color: #000000; color: #FFFFFF; }
+    h1, h2, h3, p, label, .stMarkdown { color: #FFFFFF !important; }
+    .stTextInput>div>div>input { background-color: #FFFFFF !important; color: #000000 !important; border-radius: 4px !important; }
+    .stButton>button { background-color: #1DB954 !important; color: #FFFFFF !important; border-radius: 4px !important; font-weight: bold; width: 100%; border: none; }
+    [data-testid="stSidebar"] { background-color: #121212; border-right: 1px solid #282828; min-width: 350px !important; }
+    .stTabs [data-baseweb="tab-list"] { position: static !important; background-color: transparent !important; border-bottom: 1px solid #282828; }
+    div[role="radiogroup"] > label > div:first-child { display: none !important; }
+    div[role="radiogroup"] > label {
+        background-color: #1a1a1a !important; border: 1px solid #333 !important;
+        padding: 12px 20px !important; border-radius: 4px !important; margin-bottom: 6px !important;
+        width: 100% !important; transition: all 0.2s ease !important; cursor: pointer !important;
+    }
+    div[role="radiogroup"] > label:hover { border-color: #1DB954 !important; background-color: #252525 !important; }
+    div[role="radiogroup"] > label[data-checked="true"] {
+        background-color: #252525 !important; border-left: 5px solid #1DB954 !important;
+        color: #1DB954 !important; font-weight: bold !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 2. Database & Persistence ---
+DB_FILE = "pilot_logbook.json"
+LINK_FILE = "quick_links.json"
+POS_FILE = "pilot_positions.json"
+FLEET_FILE = "fleet_status.json"
+SB_USER = "906331" 
+
+# Fleet Data Initialize
+if os.path.exists(FLEET_FILE):
+    with open(FLEET_FILE, "r", encoding="utf-8") as f:
+        fleet_data = json.load(f)
+else:
+    fleet_data = {
+        "JA01JL": {"航空会社": "JAL", "機種": "Airbus A350-941", "現在地": "RJTT", "最終飛行": "なし", "整備備考": "A-Check完了"},
+        "JA822J": {"航空会社": "JAL", "機種": "Boeing 787-8", "現在地": "RJAA", "最終飛行": "なし", "整備備考": "タイヤ摩耗あり"}
+    }
+
+# Session State
+if 'authenticated' not in st.session_state: st.session_state['authenticated'] = False
+if 'sb_json' not in st.session_state: st.session_state['sb_json'] = None
+
+# Pilot Positions
+if os.path.exists(POS_FILE):
+    with open(POS_FILE, "r", encoding="utf-8") as f: p_pos = json.load(f)
+else:
+    p_pos = {"ANA": "RJTT", "JAL": "RJTT", "HDJT": "RJTT", "Delta": "KATL", "Lufthansa": "EDDF"}
+
+# Quick Links
+default_links = [
+    {"name": "ATIS GURU", "url": "https://atis.guru/"},
+    {"name": "TRANSITION ALT LIST", "url": "https://docs.google.com/spreadsheets/d/1uTvrw-5uoGPuzGyB8lEkhyn7TO_HaZQ6WB-5N6nH-NM/edit?gid=1698518120#gid=1698518120"},
+    {"name": "SIMBRIEF", "url": "https://www.simbrief.com/system/dispatch.php"},
+    {"name": "NAVIGRAPH", "url": "https://charts.navigraph.com/"},
+    {"name": "FAA NOTAM SEARCH", "url": "https://notams.aim.faa.gov/notamSearch/nsapp.html#/"}
+]
+if os.path.exists(LINK_FILE):
+    with open(LINK_FILE, "r", encoding="utf-8") as f: quick_links = json.load(f)
+else:
+    quick_links = default_links
+
+# Checklist DB
 cl_db = {
     "A350": {
         "COCKPIT PREP": ["PARKING BRAKE - SET", "ALL BATTERY SWITCH - ON", "EXTERNAL POWER - PUSH", "ADIRS (1, 2, 3) - NAV", "CREW SUPPLY - ON", "PACKS - AUTO", "NAV LIGHTS - ON", "LOGO LIGHTS - ON", "APU - MASTER-START", "NO SMOKING - AUTO", "NO MOBILE - AUTO", "EMERGENCY LIGHTS - ARMED", "FLIGHT DIRECTORS - ON", "ALTIMETERS - SET", "MCDU - SETUP", "FLT CTL PAGE - CHECK"],
@@ -78,75 +144,6 @@ cl_db = {
     }
 }
 
-# --- 1. Page Configuration ---
-st.set_page_config(page_title="EFBPro | Flight Portal", layout="wide")
-
-st.markdown("""
-    <style>
-    .stApp { background-color: #000000; color: #FFFFFF; }
-    h1, h2, h3, p, label, .stMarkdown { color: #FFFFFF !important; }
-    .stTextInput>div>div>input { background-color: #FFFFFF !important; color: #000000 !important; border-radius: 4px !important; }
-    .stButton>button { background-color: #1DB954 !important; color: #FFFFFF !important; border-radius: 4px !important; font-weight: bold; width: 100%; border: none; }
-    [data-testid="stSidebar"] { background-color: #121212; border-right: 1px solid #282828; min-width: 350px !important; }
-    .stTabs [data-baseweb="tab-list"] { position: static !important; background-color: transparent !important; border-bottom: 1px solid #282828; }
-    div[role="radiogroup"] > label > div:first-child { display: none !important; }
-    div[role="radiogroup"] > label {
-        background-color: #1a1a1a !important; border: 1px solid #333 !important;
-        padding: 12px 20px !important; border-radius: 4px !important; margin-bottom: 6px !important;
-        width: 100% !important; transition: all 0.2s ease !important; cursor: pointer !important;
-    }
-    div[role="radiogroup"] > label:hover { border-color: #1DB954 !important; background-color: #252525 !important; }
-    div[role="radiogroup"] > label[data-checked="true"] {
-        background-color: #252525 !important; border-left: 5px solid #1DB954 !important;
-        color: #1DB954 !important; font-weight: bold !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- 2. Persistence & Session State ---
-DB_FILE, LINK_FILE, POS_FILE = "pilot_logbook.json", "quick_links.json", "pilot_positions.json"
-SB_USER = "906331" 
-
-if 'authenticated' not in st.session_state: st.session_state['authenticated'] = False
-if 'sb_json' not in st.session_state: st.session_state['sb_json'] = None
-
-# --- 内蔵機材データ (Fleet Data) ---
-fleet_data = {
-    "JA01JL": {
-        "航空会社": "JAL",
-        "機種": "Airbus A350-941",
-        "現在地": "RJTT",
-        "最終飛行": "2026/04/13 JL902",
-        "整備備考": "A-Check完了。異常なし"
-    },
-    "JA822J": {
-        "航空会社": "JAL",
-        "機種": "Boeing 787-8",
-        "現在地": "RJAA",
-        "最終飛行": "2026/04/14 JL712",
-        "整備備考": "タイヤ摩耗あり。次回ステイ時に交換"
-    }
-}
-
-# --- Data Load ---
-if os.path.exists(POS_FILE):
-    with open(POS_FILE, "r", encoding="utf-8") as f: p_pos = json.load(f)
-else:
-    p_pos = {"ANA": "RJTT", "JAL": "RJTT", "HDJT": "RJTT", "Delta": "KATL", "Lufthansa": "EDDF"}
-
-default_links = [
-    {"name": "ATIS GURU", "url": "https://atis.guru/"},
-    {"name": "TRANSITION ALT LIST", "url": "https://docs.google.com/spreadsheets/d/1uTvrw-5uoGPuzGyB8lEkhyn7TO_HaZQ6WB-5N6nH-NM/edit?gid=1698518120#gid=1698518120"},
-    {"name": "SIMBRIEF", "url": "https://www.simbrief.com/system/dispatch.php"},
-    {"name": "NAVIGRAPH", "url": "https://charts.navigraph.com/"},
-    {"name": "FAA NOTAM SEARCH", "url": "https://notams.aim.faa.gov/notamSearch/nsapp.html#/"}
-]
-
-if os.path.exists(LINK_FILE):
-    with open(LINK_FILE, "r", encoding="utf-8") as f: quick_links = json.load(f)
-else:
-    quick_links = default_links
-
 # --- 3. Login Logic ---
 if not st.session_state['authenticated']:
     st.title("EFBPro SYSTEM ACCESS")
@@ -154,6 +151,7 @@ if not st.session_state['authenticated']:
         st.session_state['authenticated'] = True
         st.rerun()
 else:
+    # --- SIDEBAR ---
     with st.sidebar:
         st.title("EFBPro")
         st.markdown(f"**USER ID:** `{SB_USER}`")
@@ -295,8 +293,10 @@ else:
             if os.path.exists(DB_FILE):
                 with open(DB_FILE, "r", encoding="utf-8") as f: logs = json.load(f)
             else: logs = []
+            
             sb_data = st.session_state.get('sb_json') or {}
             ac_info = sb_data.get('aircraft', {})
+            
             with st.form("flight_log_full_form", clear_on_submit=True):
                 c1, c2, c3 = st.columns(3)
                 log_date = c1.date_input("月 日～年", datetime.now())
@@ -314,11 +314,29 @@ else:
                 c11, c12 = st.columns(2)
                 log_sign = c11.text_input("証明 (PILOT SIGN)")
                 log_extra = st.text_area("補足")
+                
                 if st.form_submit_button("SAVE RECORD"):
-                    new_entry = {"date": str(log_date), "ac_type": log_ac_type.upper(), "reg": log_reg.upper(), "from": log_from.upper(), "to": log_to.upper(), "d_time": log_dtime, "a_time": log_atime, "content": log_content, "toldg": log_toldg, "total_time": log_total_time, "sign": log_sign, "extra": log_extra, "maint_status": "PENDING", "ts": time.time()}
+                    # 1. ログの保存
+                    new_entry = {
+                        "date": str(log_date), "ac_type": log_ac_type.upper(), "reg": log_reg.upper(), 
+                        "from": log_from.upper(), "to": log_to.upper(), "d_time": log_dtime, 
+                        "a_time": log_atime, "content": log_content, "toldg": log_toldg, 
+                        "total_time": log_total_time, "sign": log_sign, "extra": log_extra, 
+                        "maint_status": "PENDING", "ts": time.time()
+                    }
                     logs.append(new_entry)
                     with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(logs, f, indent=4)
-                    st.success("運行記録が保存されました！")
+                    
+                    # 2. Fleetデータの更新
+                    reg_key = log_reg.upper()
+                    if reg_key in fleet_data:
+                        fleet_data[reg_key]["現在地"] = log_to.upper()
+                        fleet_data[reg_key]["最終飛行"] = f"{log_date} {log_content}"
+                        with open(FLEET_FILE, "w", encoding="utf-8") as f:
+                            json.dump(fleet_data, f, indent=4, ensure_ascii=False)
+                        st.success(f"運行記録保存 & 機体 {reg_key} のステータスを更新したよ！")
+                    else:
+                        st.warning("記録は保存したけど、Fleetに登録されてない機体だったから更新はスキップしたよ。")
                     st.rerun()
 
         elif menu == "UNIT CONVERTER":
@@ -387,6 +405,8 @@ else:
             st.subheader("登録機材リスト")
             for reg, info in fleet_data.items():
                 st.write(f"**{reg}** | {info['航空会社']} | {info['機種']}")
+                st.write(f" 📍 現在地: {info['現在地']} | 🕒 最終飛行: {info['最終飛行']}")
+                st.divider()
         
         with f_tab2:
             st.subheader("機体詳細検索")
@@ -412,6 +432,7 @@ else:
             if os.path.exists(DB_FILE):
                 with open(DB_FILE, "r", encoding="utf-8") as f: all_logs = json.load(f)
             else: all_logs = []
+            
             if not all_logs: st.info("未処理の記録はありません。")
             else:
                 for idx, entry in enumerate(reversed(all_logs)):
