@@ -316,7 +316,7 @@ else:
                 log_extra = st.text_area("補足")
                 
                 if st.form_submit_button("SAVE RECORD"):
-                    # 1. ログの保存
+                    # 1. ログの保存 (PENDING状態で保存)
                     new_entry = {
                         "date": str(log_date), "ac_type": log_ac_type.upper(), "reg": log_reg.upper(), 
                         "from": log_from.upper(), "to": log_to.upper(), "d_time": log_dtime, 
@@ -326,17 +326,7 @@ else:
                     }
                     logs.append(new_entry)
                     with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(logs, f, indent=4)
-                    
-                    # 2. Fleetデータの更新
-                    reg_key = log_reg.upper()
-                    if reg_key in fleet_data:
-                        fleet_data[reg_key]["現在地"] = log_to.upper()
-                        fleet_data[reg_key]["最終飛行"] = f"{log_date} {log_content}"
-                        with open(FLEET_FILE, "w", encoding="utf-8") as f:
-                            json.dump(fleet_data, f, indent=4, ensure_ascii=False)
-                        st.success(f"運行記録保存 & 機体 {reg_key} のステータスを更新したよ！")
-                    else:
-                        st.warning("記録は保存したけど、Fleetに登録されてない機体だったから更新はスキップしたよ。")
+                    st.success("運行記録を保存したよ！整備士タブで承認するとFleetに反映されるよ。")
                     st.rerun()
 
         elif menu == "UNIT CONVERTER":
@@ -445,6 +435,22 @@ else:
                             st.error("STATUS: PENDING")
                             if st.button(f"機体リリースを承認 (IDX:{idx})", key=f"maint_btn_{idx}"):
                                 actual_idx = len(all_logs) - 1 - idx
+                                # 1. ログのステータスをRELEASEDに更新
                                 all_logs[actual_idx]["maint_status"] = "RELEASED"
-                                with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(all_logs, f, indent=4)
-                                st.balloons(); st.rerun()
+                                with open(DB_FILE, "w", encoding="utf-8") as f: 
+                                    json.dump(all_logs, f, indent=4)
+                                
+                                # 2. Fleet（機材一覧）への自動反映ロジック (統合部分)
+                                reg_key = entry['reg'].upper()
+                                if reg_key in fleet_data:
+                                    fleet_data[reg_key]["現在地"] = entry['to'].upper()
+                                    fleet_data[reg_key]["最終飛行"] = f"{entry['date']} {entry['content']}"
+                                    fleet_data[reg_key]["整備備考"] = f"{entry['total_time']}飛行 整備完了"
+                                    with open(FLEET_FILE, "w", encoding="utf-8") as f:
+                                        json.dump(fleet_data, f, indent=4, ensure_ascii=False)
+                                    st.success(f"{reg_key} のデータをFleetに反映したよ！")
+                                else:
+                                    st.warning(f"ログは承認したけど、機体 {reg_key} がFleetに登録されてないよ。")
+                                
+                                st.balloons()
+                                st.rerun()
