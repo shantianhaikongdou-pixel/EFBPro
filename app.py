@@ -109,9 +109,6 @@ SB_USER = "906331"
 
 if 'authenticated' not in st.session_state: st.session_state['authenticated'] = False
 if 'sb_json' not in st.session_state: st.session_state['sb_json'] = None
-if 'sw_running' not in st.session_state: st.session_state['sw_running'] = False
-if 'sw_start_time' not in st.session_state: st.session_state['sw_start_time'] = 0
-if 'timer_end' not in st.session_state: st.session_state['timer_end'] = None
 
 # --- Data Load ---
 if os.path.exists(POS_FILE):
@@ -163,7 +160,7 @@ else:
                         st.rerun()
 
         with s_tab2:
-            menu = st.radio("SELECT TOOL", ["PILOT LOCATIONS", "TIMERS", "OFP", "T/D CALC", "TURN RADIUS", "PAD", "WEATHER (METAR/ATIS)", "LOG", "UNIT CONVERTER", "X-WIND CALC", "VATSIM TRAFFIC"])
+            menu = st.radio("SELECT TOOL", ["PILOT LOCATIONS", "OFP", "T/D CALC", "TURN RADIUS", "PAD", "WEATHER (METAR/ATIS)", "LOG", "UNIT CONVERTER", "X-WIND CALC", "VATSIM TRAFFIC"])
 
     # --- MAIN CONTENT TABS ---
     main_tab1, main_tab2, main_tab3 = st.tabs(["MAIN TOOLS", "CHECKLIST", "MAINTENANCE"])
@@ -178,28 +175,6 @@ else:
                     p_pos[airline] = new_icao
                     with open(POS_FILE, "w", encoding="utf-8") as f: json.dump(p_pos, f)
                     st.rerun()
-
-        elif menu == "TIMERS":
-            st.subheader("FLIGHT TIMERS")
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("### STOPWATCH")
-                if st.button("START SW"):
-                    st.session_state['sw_start_time'] = time.time()
-                    st.session_state['sw_running'] = True
-                if st.button("RESET SW"):
-                    st.session_state['sw_running'] = False
-                    st.session_state['sw_start_time'] = 0
-                if st.session_state['sw_running']:
-                    st.code(f"SW: {time.strftime('%H:%M:%S', time.gmtime(time.time() - st.session_state['sw_start_time']))}")
-            with c2:
-                st.markdown("### COUNTDOWN")
-                t_min = st.number_input("MINUTES", 1, 180, 15)
-                if st.button("SET TIMER"): st.session_state['timer_end'] = time.time() + (t_min * 60)
-                if st.session_state['timer_end']:
-                    rem = st.session_state['timer_end'] - time.time()
-                    if rem > 0: st.metric("REMAINING", time.strftime('%H:%M:%S', time.gmtime(rem)))
-                    else: st.warning("TIME UP!"); st.session_state['timer_end'] = None
 
         elif menu == "OFP":
             st.subheader("SIMBRIEF OFP & PERFORMANCE")
@@ -428,6 +403,3 @@ else:
                             all_logs[actual_idx]["maint_status"] = "RELEASED"
                             with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(all_logs, f, indent=4)
                             st.balloons(); st.rerun()
-
-    if st.session_state['sw_running'] or st.session_state['timer_end']:
-        time.sleep(1); st.rerun()
