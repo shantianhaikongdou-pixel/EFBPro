@@ -40,6 +40,7 @@ DB_FILE = "pilot_logbook.json"
 LINK_FILE = "quick_links.json"
 POS_FILE = "pilot_positions.json"
 FLEET_FILE = "fleet_status.json"
+ACARS_MSG_FILE = "acars_messages.json"
 SB_USER = "906331" 
 
 def load_fleet():
@@ -48,13 +49,13 @@ def load_fleet():
             return json.load(f)
     return {
         "JA01JL": {"航空会社": "JAL", "機種": "Airbus A350-941", "現在地": "RJTT", "最終飛行": "なし", "整備備考": "A-Check完了"},
-        "JA822J": {"航空会社": "JAL", "機種": "Boeing 787-8", "現在地": "RJAA", "最終飛行": "なし", "整備備考": "タイヤ摩耗あり"},
-        "JA13JP": {"航空会社": "HDJT", "機種": "HondaJet Elite", "現在地": "RJTT", "最終飛行": "なし", "整備備考": "正常"}
+        "JA822J": {"航空会社": "JAL", "機種": "Boeing 787-8", "現在地": "RJAA", "最終飛行": "なし", "整備備考": "タイヤ摩耗あり"}
     }
 
 # Session State
 if 'authenticated' not in st.session_state: st.session_state['authenticated'] = False
 if 'sb_json' not in st.session_state: st.session_state['sb_json'] = None
+if 'cpdlc_log' not in st.session_state: st.session_state['cpdlc_log'] = []
 
 # Pilot Positions
 if os.path.exists(POS_FILE):
@@ -63,19 +64,18 @@ else:
     p_pos = {"ANA": "RJTT", "JAL": "RJTT", "HDJT": "RJTT", "Delta": "KATL", "Lufthansa": "EDDF"}
 
 # Quick Links
-default_links = [
-    {"name": "ATIS GURU", "url": "https://atis.guru/"},
-    {"name": "TRANSITION ALT LIST", "url": "https://docs.google.com/spreadsheets/d/1uTvrw-5uoGPuzGyB8lEkhyn7TO_HaZQ6WB-5N6nH-NM/edit?gid=1698518120#gid=1698518120"},
-    {"name": "SIMBRIEF", "url": "https://www.simbrief.com/system/dispatch.php"},
-    {"name": "NAVIGRAPH", "url": "https://charts.navigraph.com/"},
-    {"name": "FAA NOTAM SEARCH", "url": "https://notams.aim.faa.gov/notamSearch/nsapp.html#/"}
-]
 if os.path.exists(LINK_FILE):
     with open(LINK_FILE, "r", encoding="utf-8") as f: quick_links = json.load(f)
 else:
-    quick_links = default_links
+    quick_links = [
+        {"name": "ATIS GURU", "url": "https://atis.guru/"},
+        {"name": "TRANSITION ALT LIST", "url": "https://docs.google.com/spreadsheets/d/1uTvrw-5uoGPuzGyB8lEkhyn7TO_HaZQ6WB-5N6nH-NM/edit?gid=1698518120#gid=1698518120"},
+        {"name": "SIMBRIEF", "url": "https://www.simbrief.com/system/dispatch.php"},
+        {"name": "NAVIGRAPH", "url": "https://charts.navigraph.com/"},
+        {"name": "FAA NOTAM SEARCH", "url": "https://notams.aim.faa.gov/notamSearch/nsapp.html#/"}
+    ]
 
-# Checklist DB
+# Checklist DB (省略なし)
 cl_db = {
     "A350": {
         "COCKPIT PREP": ["PARKING BRAKE - SET", "ALL BATTERY SWITCH - ON", "EXTERNAL POWER - PUSH", "ADIRS (1, 2, 3) - NAV", "CREW SUPPLY - ON", "PACKS - AUTO", "NAV LIGHTS - ON", "LOGO LIGHTS - ON", "APU - MASTER-START", "NO SMOKING - AUTO", "NO MOBILE - AUTO", "EMERGENCY LIGHTS - ARMED", "FLIGHT DIRECTORS - ON", "ALTIMETERS - SET", "MCDU - SETUP", "FLT CTL PAGE - CHECK"],
@@ -172,7 +172,7 @@ else:
                         st.rerun()
 
         with s_tab2:
-            menu = st.radio("SELECT TOOL", ["PILOT LOCATIONS", "OFP", "T/D CALC", "TURN RADIUS", "PAD", "WEATHER (METAR/ATIS)", "LOG", "UNIT CONVERTER", "X-WIND CALC", "VATSIM TRAFFIC"])
+            menu = st.radio("SELECT TOOL", ["PILOT LOCATIONS", "ACARS & OFP", "CPDLC", "T/D CALC", "TURN RADIUS", "PAD", "WEATHER (METAR/ATIS)", "LOG", "UNIT CONVERTER", "X-WIND CALC", "VATSIM TRAFFIC"])
 
     # --- MAIN CONTENT TABS ---
     main_tab1, main_tab2, main_tab3 = st.tabs(["MAIN TOOLS", "CHECKLIST", "MAINTENANCE & FLEET"])
@@ -188,18 +188,18 @@ else:
                     with open(POS_FILE, "w", encoding="utf-8") as f: json.dump(p_pos, f)
                     st.rerun()
 
-        elif menu == "OFP":
-            st.subheader("SIMBRIEF OFP & PERFORMANCE")
-            if st.button("FETCH FROM SIMBRIEF"):
+        elif menu == "ACARS & OFP":
+            st.subheader("ACARS / SIMBRIEF OFP")
+            if st.button("ACARS: INITIALIZE & FETCH OFP"):
                 res = requests.get(f"https://www.simbrief.com/api/xml.fetcher.php?userid={SB_USER}&json=1")
                 if res.status_code == 200:
                     data = res.json()
                     if "params" in data:
                         st.session_state['sb_json'] = data
-                        st.success("OFP & PERFORMANCE DATA IMPORTED")
+                        st.success("ACARS: DATA RECEIVED")
                         st.rerun()
                     else:
-                        st.error("フライトプランが見つかりません。SimBriefで GENERATE OFP 済みですか？")
+                        st.error("ACARS ERROR: NO OFP DATA")
             
             if st.session_state.get('sb_json'):
                 sb = st.session_state['sb_json']
@@ -210,7 +210,7 @@ else:
 
                 st.markdown(f"""
                 <div style="background: #1a1a1a; padding: 20px; border-radius: 10px; border-left: 5px solid #1DB954; margin-bottom: 20px;">
-                    <p style="color: #888; margin: 0; font-size: 0.9em;">TAKEOFF PERFORMANCE</p>
+                    <p style="color: #888; margin: 0; font-size: 0.9em;">ACARS: TAKEOFF PERFORMANCE</p>
                     <div style="display: flex; justify-content: space-around; text-align: center; padding: 15px 0;">
                         <div><div style="color:#888; font-size:0.8em;">V1</div><h1 style="margin:0;">{v1}</h1></div>
                         <div><div style="color:#888; font-size:0.8em;">VR</div><h1 style="margin:0;">{vr}</h1></div>
@@ -222,7 +222,7 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
-                st.markdown("### Flight Information")
+                st.markdown("### ACARS Flight Data")
                 info_col1, info_col2, info_col3, info_col4, info_col5 = st.columns(5)
                 with info_col1: st.metric("CALLSIGN", sb.get('atc', {}).get('callsign', "N/A"))
                 with info_col2: st.metric("TOW", f"{int(tow)/1000:.1f} T")
@@ -230,6 +230,23 @@ else:
                 with info_col4: st.metric("ORIGIN", sb.get('origin', {}).get('icao_code', "N/A"))
                 with info_col5: st.metric("DEST", sb.get('destination', {}).get('icao_code', "N/A"))
                 st.info(f"**ROUTE:** {sb.get('general', {}).get('route', 'N/A')}")
+
+        elif menu == "CPDLC":
+            st.subheader("CPDLC (Controller-Pilot Data Link Communications)")
+            
+            c1, c2 = st.columns([1, 3])
+            with c1:
+                st.write("**ATC REQUESTS**")
+                if st.button("REQ CLIMB"): st.session_state['cpdlc_log'].append({"time": datetime.utcnow().strftime("%H:%M"), "msg": "REQUEST CLIMB TO FLXXX", "type": "SENT"})
+                if st.button("REQ DIRECT"): st.session_state['cpdlc_log'].append({"time": datetime.utcnow().strftime("%H:%M"), "msg": "REQUEST DIRECT TO [WAYPOINT]", "type": "SENT"})
+                if st.button("REQ OCEANIC"): st.session_state['cpdlc_log'].append({"time": datetime.utcnow().strftime("%H:%M"), "msg": "REQUEST OCEANIC CLEARANCE", "type": "SENT"})
+                if st.button("CLEAR LOG"): st.session_state['cpdlc_log'] = []
+
+            with c2:
+                st.write("**MESSAGE LOG**")
+                for entry in reversed(st.session_state['cpdlc_log']):
+                    color = "#1DB954" if entry['type'] == "SENT" else "#6da5ff"
+                    st.markdown(f"**[{entry['time']}]** <span style='color:{color};'>{entry['type']}:</span> {entry['msg']}", unsafe_allow_html=True)
 
         elif menu == "T/D CALC":
             st.subheader("TOP OF DESCENT CALCULATOR")
