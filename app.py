@@ -40,7 +40,7 @@ DB_FILE = "pilot_logbook.json"
 LINK_FILE = "quick_links.json"
 POS_FILE = "pilot_positions.json"
 FLEET_FILE = "fleet_status.json"
-ACARS_MSG_FILE = "acars_messages.json"
+COMMS_FILE = "comms_log.json" # 通信ログ用
 SB_USER = "906331" 
 
 def load_fleet():
@@ -52,10 +52,14 @@ def load_fleet():
         "JA822J": {"航空会社": "JAL", "機種": "Boeing 787-8", "現在地": "RJAA", "最終飛行": "なし", "整備備考": "タイヤ摩耗あり"}
     }
 
+def load_comms():
+    if os.path.exists(COMMS_FILE):
+        with open(COMMS_FILE, "r", encoding="utf-8") as f: return json.load(f)
+    return []
+
 # Session State
 if 'authenticated' not in st.session_state: st.session_state['authenticated'] = False
 if 'sb_json' not in st.session_state: st.session_state['sb_json'] = None
-if 'cpdlc_log' not in st.session_state: st.session_state['cpdlc_log'] = []
 
 # Pilot Positions
 if os.path.exists(POS_FILE):
@@ -64,18 +68,19 @@ else:
     p_pos = {"ANA": "RJTT", "JAL": "RJTT", "HDJT": "RJTT", "Delta": "KATL", "Lufthansa": "EDDF"}
 
 # Quick Links
+default_links = [
+    {"name": "ATIS GURU", "url": "https://atis.guru/"},
+    {"name": "TRANSITION ALT LIST", "url": "https://docs.google.com/spreadsheets/d/1uTvrw-5uoGPuzGyB8lEkhyn7TO_HaZQ6WB-5N6nH-NM/edit?gid=1698518120#gid=1698518120"},
+    {"name": "SIMBRIEF", "url": "https://www.simbrief.com/system/dispatch.php"},
+    {"name": "NAVIGRAPH", "url": "https://charts.navigraph.com/"},
+    {"name": "FAA NOTAM SEARCH", "url": "https://notams.aim.faa.gov/notamSearch/nsapp.html#/"}
+]
 if os.path.exists(LINK_FILE):
     with open(LINK_FILE, "r", encoding="utf-8") as f: quick_links = json.load(f)
 else:
-    quick_links = [
-        {"name": "ATIS GURU", "url": "https://atis.guru/"},
-        {"name": "TRANSITION ALT LIST", "url": "https://docs.google.com/spreadsheets/d/1uTvrw-5uoGPuzGyB8lEkhyn7TO_HaZQ6WB-5N6nH-NM/edit?gid=1698518120#gid=1698518120"},
-        {"name": "SIMBRIEF", "url": "https://www.simbrief.com/system/dispatch.php"},
-        {"name": "NAVIGRAPH", "url": "https://charts.navigraph.com/"},
-        {"name": "FAA NOTAM SEARCH", "url": "https://notams.aim.faa.gov/notamSearch/nsapp.html#/"}
-    ]
+    quick_links = default_links
 
-# Checklist DB (省略なし)
+# Checklist DB (All Aircraft)
 cl_db = {
     "A350": {
         "COCKPIT PREP": ["PARKING BRAKE - SET", "ALL BATTERY SWITCH - ON", "EXTERNAL POWER - PUSH", "ADIRS (1, 2, 3) - NAV", "CREW SUPPLY - ON", "PACKS - AUTO", "NAV LIGHTS - ON", "LOGO LIGHTS - ON", "APU - MASTER-START", "NO SMOKING - AUTO", "NO MOBILE - AUTO", "EMERGENCY LIGHTS - ARMED", "FLIGHT DIRECTORS - ON", "ALTIMETERS - SET", "MCDU - SETUP", "FLT CTL PAGE - CHECK"],
@@ -172,7 +177,7 @@ else:
                         st.rerun()
 
         with s_tab2:
-            menu = st.radio("SELECT TOOL", ["PILOT LOCATIONS", "ACARS & OFP", "CPDLC", "T/D CALC", "TURN RADIUS", "PAD", "WEATHER (METAR/ATIS)", "LOG", "UNIT CONVERTER", "X-WIND CALC", "VATSIM TRAFFIC"])
+            menu = st.radio("SELECT TOOL", ["PILOT LOCATIONS", "OFP", "T/D CALC", "TURN RADIUS", "PAD", "WEATHER (METAR/ATIS)", "LOG", "UNIT CONVERTER", "X-WIND CALC", "VATSIM TRAFFIC", "CPDLC/ACARS"])
 
     # --- MAIN CONTENT TABS ---
     main_tab1, main_tab2, main_tab3 = st.tabs(["MAIN TOOLS", "CHECKLIST", "MAINTENANCE & FLEET"])
@@ -188,18 +193,18 @@ else:
                     with open(POS_FILE, "w", encoding="utf-8") as f: json.dump(p_pos, f)
                     st.rerun()
 
-        elif menu == "ACARS & OFP":
-            st.subheader("ACARS / SIMBRIEF OFP")
-            if st.button("ACARS: INITIALIZE & FETCH OFP"):
+        elif menu == "OFP":
+            st.subheader("SIMBRIEF OFP & PERFORMANCE")
+            if st.button("FETCH FROM SIMBRIEF"):
                 res = requests.get(f"https://www.simbrief.com/api/xml.fetcher.php?userid={SB_USER}&json=1")
                 if res.status_code == 200:
                     data = res.json()
                     if "params" in data:
                         st.session_state['sb_json'] = data
-                        st.success("ACARS: DATA RECEIVED")
+                        st.success("OFP & PERFORMANCE DATA IMPORTED")
                         st.rerun()
                     else:
-                        st.error("ACARS ERROR: NO OFP DATA")
+                        st.error("フライトプランが見つかりません。SimBriefで GENERATE OFP 済みですか？")
             
             if st.session_state.get('sb_json'):
                 sb = st.session_state['sb_json']
@@ -210,7 +215,7 @@ else:
 
                 st.markdown(f"""
                 <div style="background: #1a1a1a; padding: 20px; border-radius: 10px; border-left: 5px solid #1DB954; margin-bottom: 20px;">
-                    <p style="color: #888; margin: 0; font-size: 0.9em;">ACARS: TAKEOFF PERFORMANCE</p>
+                    <p style="color: #888; margin: 0; font-size: 0.9em;">TAKEOFF PERFORMANCE</p>
                     <div style="display: flex; justify-content: space-around; text-align: center; padding: 15px 0;">
                         <div><div style="color:#888; font-size:0.8em;">V1</div><h1 style="margin:0;">{v1}</h1></div>
                         <div><div style="color:#888; font-size:0.8em;">VR</div><h1 style="margin:0;">{vr}</h1></div>
@@ -222,7 +227,7 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
-                st.markdown("### ACARS Flight Data")
+                st.markdown("### Flight Information")
                 info_col1, info_col2, info_col3, info_col4, info_col5 = st.columns(5)
                 with info_col1: st.metric("CALLSIGN", sb.get('atc', {}).get('callsign', "N/A"))
                 with info_col2: st.metric("TOW", f"{int(tow)/1000:.1f} T")
@@ -230,23 +235,6 @@ else:
                 with info_col4: st.metric("ORIGIN", sb.get('origin', {}).get('icao_code', "N/A"))
                 with info_col5: st.metric("DEST", sb.get('destination', {}).get('icao_code', "N/A"))
                 st.info(f"**ROUTE:** {sb.get('general', {}).get('route', 'N/A')}")
-
-        elif menu == "CPDLC":
-            st.subheader("CPDLC (Controller-Pilot Data Link Communications)")
-            
-            c1, c2 = st.columns([1, 3])
-            with c1:
-                st.write("**ATC REQUESTS**")
-                if st.button("REQ CLIMB"): st.session_state['cpdlc_log'].append({"time": datetime.utcnow().strftime("%H:%M"), "msg": "REQUEST CLIMB TO FLXXX", "type": "SENT"})
-                if st.button("REQ DIRECT"): st.session_state['cpdlc_log'].append({"time": datetime.utcnow().strftime("%H:%M"), "msg": "REQUEST DIRECT TO [WAYPOINT]", "type": "SENT"})
-                if st.button("REQ OCEANIC"): st.session_state['cpdlc_log'].append({"time": datetime.utcnow().strftime("%H:%M"), "msg": "REQUEST OCEANIC CLEARANCE", "type": "SENT"})
-                if st.button("CLEAR LOG"): st.session_state['cpdlc_log'] = []
-
-            with c2:
-                st.write("**MESSAGE LOG**")
-                for entry in reversed(st.session_state['cpdlc_log']):
-                    color = "#1DB954" if entry['type'] == "SENT" else "#6da5ff"
-                    st.markdown(f"**[{entry['time']}]** <span style='color:{color};'>{entry['type']}:</span> {entry['msg']}", unsafe_allow_html=True)
 
         elif menu == "T/D CALC":
             st.subheader("TOP OF DESCENT CALCULATOR")
@@ -393,6 +381,79 @@ else:
                         fplan = p.get("flight_plan")
                         st.info(f"**{p['callsign']}** | {(fplan.get('departure') if fplan else '???')} ➔ {(fplan.get('arrival') if fplan else '???')} | ALT: {p.get('altitude', 0)}ft")
                 else: st.write(f"🛬 No traffic reported for {vatsim_icao}.")
+
+        elif menu == "CPDLC/ACARS":
+            st.subheader("📡 CPDLC / ACARS COMMUNICATION")
+            comms = load_comms()
+            
+            c_tab1, c_tab2, c_tab3 = st.tabs(["📥 RECEIVE (INBOUND)", "📤 CPDLC [SEND]", "📤 ACARS [SEND]"])
+            
+            with c_tab1:
+                st.write("**INBOUND MESSAGES**")
+                if not comms: st.info("No incoming messages.")
+                else:
+                    for idx, msg in enumerate(reversed(comms)):
+                        # Inboundのみ表示
+                        if msg["direction"] == "INBOUND":
+                            status_color = "#1DB954" if msg["status"] == "ACCEPTED" else "#FF4B4B"
+                            with st.container():
+                                st.markdown(f"""
+                                <div style="border-left: 5px solid {status_color}; background: #1a1a1a; padding: 15px; margin-bottom: 10px;">
+                                    <small>{msg['timestamp']} | {msg['type']} | FROM: {msg['from']}</small><br>
+                                    <strong>{msg['content']}</strong>
+                                </div>
+                                """, unsafe_allow_html=True)
+                                if msg["status"] == "PENDING":
+                                    if st.button(f"ACCEPT (IDX:{idx})", key=f"accept_{idx}"):
+                                        actual_idx = len(comms) - 1 - idx
+                                        comms[actual_idx]["status"] = "ACCEPTED"
+                                        with open(COMMS_FILE, "w", encoding="utf-8") as f: json.dump(comms, f, indent=4)
+                                        st.rerun()
+
+            with c_tab2:
+                st.write("**ATC DATALINK (CPDLC)**")
+                with st.form("cpdlc_send", clear_on_submit=True):
+                    target = st.text_input("TARGET CALLSIGN", value="JA811A").upper()
+                    content = st.text_area("MESSAGE (ATC CLEARANCE / FREQ CHANGE etc...)")
+                    if st.form_submit_button("SEND CPDLC"):
+                        new_msg = {
+                            "timestamp": datetime.now().strftime("%H:%M:%S"),
+                            "type": "CPDLC", "direction": "OUTBOUND", "from": "ATC/DISP",
+                            "to": target, "content": content.upper(), "status": "SENT"
+                        }
+                        comms.append(new_msg)
+                        with open(COMMS_FILE, "w", encoding="utf-8") as f: json.dump(comms, f, indent=4)
+                        st.success(f"CPDLC Message sent to {target}")
+
+            with c_tab3:
+                st.write("**COMPANY DATALINK (ACARS)**")
+                with st.form("acars_send", clear_on_submit=True):
+                    target_acars = st.text_input("TARGET CALLSIGN", value="JA811A").upper()
+                    content_acars = st.text_area("MESSAGE (METAR / LOAD SHEET / GATE INFO etc...)")
+                    if st.form_submit_button("SEND ACARS"):
+                        new_msg = {
+                            "timestamp": datetime.now().strftime("%H:%M:%S"),
+                            "type": "ACARS", "direction": "OUTBOUND", "from": "DISPATCHER",
+                            "to": target_acars, "content": content_acars.upper(), "status": "SENT"
+                        }
+                        comms.append(new_msg)
+                        with open(COMMS_FILE, "w", encoding="utf-8") as f: json.dump(comms, f, indent=4)
+                        st.success(f"ACARS Message sent to {target_acars}")
+
+                # パイロットからのテスト送信用（デバッグ用ボタン）
+                with st.expander("TEST INBOUND (PILOT SIDE SIM)"):
+                    with st.form("test_inbound"):
+                        t_type = st.selectbox("TYPE", ["CPDLC", "ACARS"])
+                        t_from = st.text_input("FROM", "JA811A")
+                        t_cont = st.text_input("CONTENT")
+                        if st.form_submit_button("SIMULATE RECEIVE"):
+                            comms.append({
+                                "timestamp": datetime.now().strftime("%H:%M:%S"),
+                                "type": t_type, "direction": "INBOUND", "from": t_from,
+                                "to": "DISP", "content": t_cont.upper(), "status": "PENDING"
+                            })
+                            with open(COMMS_FILE, "w", encoding="utf-8") as f: json.dump(comms, f, indent=4)
+                            st.rerun()
 
     with main_tab2:
         st.subheader("AIRCRAFT CHECKLIST")
