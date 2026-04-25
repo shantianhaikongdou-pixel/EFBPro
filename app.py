@@ -40,7 +40,6 @@ DB_FILE = "pilot_logbook.json"
 LINK_FILE = "quick_links.json"
 POS_FILE = "pilot_positions.json"
 FLEET_FILE = "fleet_status.json"
-COMMS_FILE = "comms_log.json" # 通信ログ用
 SB_USER = "906331" 
 
 def load_fleet():
@@ -52,14 +51,10 @@ def load_fleet():
         "JA822J": {"航空会社": "JAL", "機種": "Boeing 787-8", "現在地": "RJAA", "最終飛行": "なし", "整備備考": "タイヤ摩耗あり"}
     }
 
-def load_comms():
-    if os.path.exists(COMMS_FILE):
-        with open(COMMS_FILE, "r", encoding="utf-8") as f: return json.load(f)
-    return []
-
 # Session State
 if 'authenticated' not in st.session_state: st.session_state['authenticated'] = False
 if 'sb_json' not in st.session_state: st.session_state['sb_json'] = None
+if 'cpdlc_messages' not in st.session_state: st.session_state['cpdlc_messages'] = []
 
 # Pilot Positions
 if os.path.exists(POS_FILE):
@@ -177,7 +172,7 @@ else:
                         st.rerun()
 
         with s_tab2:
-            menu = st.radio("SELECT TOOL", ["PILOT LOCATIONS", "OFP", "T/D CALC", "TURN RADIUS", "PAD", "WEATHER (METAR/ATIS)", "LOG", "UNIT CONVERTER", "X-WIND CALC", "VATSIM TRAFFIC", "CPDLC/ACARS"])
+            menu = st.radio("SELECT TOOL", ["PILOT LOCATIONS", "OFP", "CPDLC / ACARS", "T/D CALC", "TURN RADIUS", "PAD", "WEATHER (METAR/ATIS)", "LOG", "UNIT CONVERTER", "X-WIND CALC", "VATSIM TRAFFIC"])
 
     # --- MAIN CONTENT TABS ---
     main_tab1, main_tab2, main_tab3 = st.tabs(["MAIN TOOLS", "CHECKLIST", "MAINTENANCE & FLEET"])
@@ -236,6 +231,50 @@ else:
                 with info_col5: st.metric("DEST", sb.get('destination', {}).get('icao_code', "N/A"))
                 st.info(f"**ROUTE:** {sb.get('general', {}).get('route', 'N/A')}")
 
+        elif menu == "CPDLC / ACARS":
+            st.subheader("CPDLC / ACARS COMMUNICATION")
+            c_tab1, c_tab2, c_tab3 = st.tabs(["RECEIVE (INBOUND)", "CPDLC [SEND]", "ACARS [SEND]"])
+            
+            with c_tab1:
+                st.markdown("### INBOUND MESSAGES")
+                if not st.session_state['cpdlc_messages']:
+                    st.info("NO NEW MESSAGES")
+                else:
+                    for msg in reversed(st.session_state['cpdlc_messages']):
+                        style = "border-left: 5px solid #1DB954; background: #1a1a1a;" if msg['type'] == "CPDLC" else "border-left: 5px solid #888; background: #121212;"
+                        st.markdown(f"""
+                        <div style="padding: 10px; margin-bottom: 5px; {style}">
+                            <small style="color: #888;">{msg['time']} | {msg['type']} FROM: {msg['from']}</small><br>
+                            <strong>{msg['content']}</strong>
+                        </div>
+                        """, unsafe_allow_html=True)
+                if st.button("CLEAR ALL MESSAGES"):
+                    st.session_state['cpdlc_messages'] = []
+                    st.rerun()
+
+            with c_tab2:
+                st.markdown("### CPDLC REQUEST")
+                cpdlc_to = st.selectbox("TO (ATC)", ["FUKUOKA CTR", "TOKYO CTR", "SAPPORO CTR", "NAHA CTR", "RJTT APP", "RJAA TWR"])
+                cpdlc_msg_type = st.selectbox("REQUEST TYPE", ["CLIMB TO", "DESCENT TO", "DIRECT TO", "WEATHER DEVIATION", "REPORT BACK", "VOICE CONTACT REQUEST"])
+                cpdlc_val = st.text_input("VALUE (ALT/FIX/ETC)")
+                if st.button("SEND CPDLC REQUEST"):
+                    full_msg = f"REQ {cpdlc_msg_type} {cpdlc_val}".upper()
+                    st.session_state['cpdlc_messages'].append({"time": datetime.now().strftime("%H:%M"), "type": "CPDLC", "from": "ME", "content": full_msg})
+                    st.success(f"CPDLC SENT TO {cpdlc_to}")
+                    time.sleep(0.5)
+                    st.session_state['cpdlc_messages'].append({"time": datetime.now().strftime("%H:%M"), "type": "CPDLC", "from": cpdlc_to, "content": f"ROGER. {full_msg} APPROVED."})
+                    st.rerun()
+
+            with c_tab3:
+                st.markdown("### ACARS MESSAGE")
+                acars_to = st.text_input("RECIPIENT (AIRLINE/DISPATCH)", value="ANA OPS")
+                acars_content = st.text_area("MESSAGE CONTENT", placeholder="ETA RJTT 1230Z. REQUEST GATE ASSIGNMENT.")
+                if st.button("SEND ACARS"):
+                    if acars_content:
+                        st.session_state['cpdlc_messages'].append({"time": datetime.now().strftime("%H:%M"), "type": "ACARS", "from": "ME", "content": acars_content.upper()})
+                        st.success("ACARS MESSAGE TRANSMITTED")
+                        st.rerun()
+
         elif menu == "T/D CALC":
             st.subheader("TOP OF DESCENT CALCULATOR")
             c1, c2, c3 = st.columns(3)
@@ -266,7 +305,7 @@ else:
             if st.button("CLEAR PAD"): st.rerun()
 
         elif menu == "WEATHER (METAR/ATIS)":
-            st.subheader("🌤️ AIRPORT WEATHER")
+            st.subheader("AIRPORT WEATHER")
             icao_input = st.text_input("AIRPORT ICAO", "RJTT").upper().strip()
             if icao_input:
                 res = requests.get(f"https://metar.vatsim.net/metar.php?id={icao_input}")
@@ -334,7 +373,7 @@ else:
                     st.rerun()
 
         elif menu == "UNIT CONVERTER":
-            st.subheader("⚖️ UNIT CONVERTER")
+            st.subheader("UNIT CONVERTER")
             col1, col2 = st.columns(2)
             with col1:
                 st.write("**Weight (KG ⟷ LB)**")
@@ -368,7 +407,7 @@ else:
                 conts = [c for c in v_data.get("controllers", []) if c.get("callsign", "").upper().startswith(("RJ", "RO"))]
                 if conts:
                     for c in conts: st.success(f"**{c['callsign']}** ({c['name']}) - {c.get('frequency', 'N/A')}")
-                else: st.write("📡 No controllers online.")
+                else: st.write("No controllers online.")
                 st.write(f"**TRAFFIC AT {vatsim_icao}**")
                 pilots = []
                 for p in v_data.get("pilots", []):
@@ -380,80 +419,7 @@ else:
                     for p in pilots:
                         fplan = p.get("flight_plan")
                         st.info(f"**{p['callsign']}** | {(fplan.get('departure') if fplan else '???')} ➔ {(fplan.get('arrival') if fplan else '???')} | ALT: {p.get('altitude', 0)}ft")
-                else: st.write(f"🛬 No traffic reported for {vatsim_icao}.")
-
-        elif menu == "CPDLC/ACARS":
-            st.subheader("📡 CPDLC / ACARS COMMUNICATION")
-            comms = load_comms()
-            
-            c_tab1, c_tab2, c_tab3 = st.tabs(["📥 RECEIVE (INBOUND)", "📤 CPDLC [SEND]", "📤 ACARS [SEND]"])
-            
-            with c_tab1:
-                st.write("**INBOUND MESSAGES**")
-                if not comms: st.info("No incoming messages.")
-                else:
-                    for idx, msg in enumerate(reversed(comms)):
-                        # Inboundのみ表示
-                        if msg["direction"] == "INBOUND":
-                            status_color = "#1DB954" if msg["status"] == "ACCEPTED" else "#FF4B4B"
-                            with st.container():
-                                st.markdown(f"""
-                                <div style="border-left: 5px solid {status_color}; background: #1a1a1a; padding: 15px; margin-bottom: 10px;">
-                                    <small>{msg['timestamp']} | {msg['type']} | FROM: {msg['from']}</small><br>
-                                    <strong>{msg['content']}</strong>
-                                </div>
-                                """, unsafe_allow_html=True)
-                                if msg["status"] == "PENDING":
-                                    if st.button(f"ACCEPT (IDX:{idx})", key=f"accept_{idx}"):
-                                        actual_idx = len(comms) - 1 - idx
-                                        comms[actual_idx]["status"] = "ACCEPTED"
-                                        with open(COMMS_FILE, "w", encoding="utf-8") as f: json.dump(comms, f, indent=4)
-                                        st.rerun()
-
-            with c_tab2:
-                st.write("**ATC DATALINK (CPDLC)**")
-                with st.form("cpdlc_send", clear_on_submit=True):
-                    target = st.text_input("TARGET CALLSIGN", value="JA811A").upper()
-                    content = st.text_area("MESSAGE (ATC CLEARANCE / FREQ CHANGE etc...)")
-                    if st.form_submit_button("SEND CPDLC"):
-                        new_msg = {
-                            "timestamp": datetime.now().strftime("%H:%M:%S"),
-                            "type": "CPDLC", "direction": "OUTBOUND", "from": "ATC/DISP",
-                            "to": target, "content": content.upper(), "status": "SENT"
-                        }
-                        comms.append(new_msg)
-                        with open(COMMS_FILE, "w", encoding="utf-8") as f: json.dump(comms, f, indent=4)
-                        st.success(f"CPDLC Message sent to {target}")
-
-            with c_tab3:
-                st.write("**COMPANY DATALINK (ACARS)**")
-                with st.form("acars_send", clear_on_submit=True):
-                    target_acars = st.text_input("TARGET CALLSIGN", value="JA811A").upper()
-                    content_acars = st.text_area("MESSAGE (METAR / LOAD SHEET / GATE INFO etc...)")
-                    if st.form_submit_button("SEND ACARS"):
-                        new_msg = {
-                            "timestamp": datetime.now().strftime("%H:%M:%S"),
-                            "type": "ACARS", "direction": "OUTBOUND", "from": "DISPATCHER",
-                            "to": target_acars, "content": content_acars.upper(), "status": "SENT"
-                        }
-                        comms.append(new_msg)
-                        with open(COMMS_FILE, "w", encoding="utf-8") as f: json.dump(comms, f, indent=4)
-                        st.success(f"ACARS Message sent to {target_acars}")
-
-                # パイロットからのテスト送信用（デバッグ用ボタン）
-                with st.expander("TEST INBOUND (PILOT SIDE SIM)"):
-                    with st.form("test_inbound"):
-                        t_type = st.selectbox("TYPE", ["CPDLC", "ACARS"])
-                        t_from = st.text_input("FROM", "JA811A")
-                        t_cont = st.text_input("CONTENT")
-                        if st.form_submit_button("SIMULATE RECEIVE"):
-                            comms.append({
-                                "timestamp": datetime.now().strftime("%H:%M:%S"),
-                                "type": t_type, "direction": "INBOUND", "from": t_from,
-                                "to": "DISP", "content": t_cont.upper(), "status": "PENDING"
-                            })
-                            with open(COMMS_FILE, "w", encoding="utf-8") as f: json.dump(comms, f, indent=4)
-                            st.rerun()
+                else: st.write(f"No traffic reported for {vatsim_icao}.")
 
     with main_tab2:
         st.subheader("AIRCRAFT CHECKLIST")
