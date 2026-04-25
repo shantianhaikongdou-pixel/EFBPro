@@ -48,13 +48,13 @@ def load_fleet():
             return json.load(f)
     return {
         "JA01JL": {"航空会社": "JAL", "機種": "Airbus A350-941", "現在地": "RJTT", "最終飛行": "なし", "整備備考": "A-Check完了"},
-        "JA822J": {"航空会社": "JAL", "機種": "Boeing 787-8", "現在地": "RJAA", "最終飛行": "なし", "整備備考": "タイヤ摩耗あり"}
+        "JA822J": {"航空会社": "JAL", "機種": "Boeing 787-8", "現在地": "RJAA", "最終飛行": "なし", "整備備考": "タイヤ摩耗あり"},
+        "JA13JP": {"航空会社": "HDJT", "機種": "HondaJet Elite", "現在地": "RJTT", "最終飛行": "なし", "整備備考": "正常"}
     }
 
 # Session State
 if 'authenticated' not in st.session_state: st.session_state['authenticated'] = False
 if 'sb_json' not in st.session_state: st.session_state['sb_json'] = None
-if 'cpdlc_messages' not in st.session_state: st.session_state['cpdlc_messages'] = []
 
 # Pilot Positions
 if os.path.exists(POS_FILE):
@@ -75,7 +75,7 @@ if os.path.exists(LINK_FILE):
 else:
     quick_links = default_links
 
-# Checklist DB (All Aircraft)
+# Checklist DB
 cl_db = {
     "A350": {
         "COCKPIT PREP": ["PARKING BRAKE - SET", "ALL BATTERY SWITCH - ON", "EXTERNAL POWER - PUSH", "ADIRS (1, 2, 3) - NAV", "CREW SUPPLY - ON", "PACKS - AUTO", "NAV LIGHTS - ON", "LOGO LIGHTS - ON", "APU - MASTER-START", "NO SMOKING - AUTO", "NO MOBILE - AUTO", "EMERGENCY LIGHTS - ARMED", "FLIGHT DIRECTORS - ON", "ALTIMETERS - SET", "MCDU - SETUP", "FLT CTL PAGE - CHECK"],
@@ -172,7 +172,7 @@ else:
                         st.rerun()
 
         with s_tab2:
-            menu = st.radio("SELECT TOOL", ["PILOT LOCATIONS", "OFP", "CPDLC / ACARS", "T/D CALC", "TURN RADIUS", "PAD", "WEATHER (METAR/ATIS)", "LOG", "UNIT CONVERTER", "X-WIND CALC", "VATSIM TRAFFIC"])
+            menu = st.radio("SELECT TOOL", ["PILOT LOCATIONS", "OFP", "T/D CALC", "TURN RADIUS", "PAD", "WEATHER (METAR/ATIS)", "LOG", "UNIT CONVERTER", "X-WIND CALC", "VATSIM TRAFFIC"])
 
     # --- MAIN CONTENT TABS ---
     main_tab1, main_tab2, main_tab3 = st.tabs(["MAIN TOOLS", "CHECKLIST", "MAINTENANCE & FLEET"])
@@ -231,50 +231,6 @@ else:
                 with info_col5: st.metric("DEST", sb.get('destination', {}).get('icao_code', "N/A"))
                 st.info(f"**ROUTE:** {sb.get('general', {}).get('route', 'N/A')}")
 
-        elif menu == "CPDLC / ACARS":
-            st.subheader("CPDLC / ACARS COMMUNICATION")
-            c_tab1, c_tab2, c_tab3 = st.tabs(["RECEIVE (INBOUND)", "CPDLC [SEND]", "ACARS [SEND]"])
-            
-            with c_tab1:
-                st.markdown("### INBOUND MESSAGES")
-                if not st.session_state['cpdlc_messages']:
-                    st.info("NO NEW MESSAGES")
-                else:
-                    for msg in reversed(st.session_state['cpdlc_messages']):
-                        style = "border-left: 5px solid #1DB954; background: #1a1a1a;" if msg['type'] == "CPDLC" else "border-left: 5px solid #888; background: #121212;"
-                        st.markdown(f"""
-                        <div style="padding: 10px; margin-bottom: 5px; {style}">
-                            <small style="color: #888;">{msg['time']} | {msg['type']} FROM: {msg['from']}</small><br>
-                            <strong>{msg['content']}</strong>
-                        </div>
-                        """, unsafe_allow_html=True)
-                if st.button("CLEAR ALL MESSAGES"):
-                    st.session_state['cpdlc_messages'] = []
-                    st.rerun()
-
-            with c_tab2:
-                st.markdown("### CPDLC REQUEST")
-                cpdlc_to = st.selectbox("TO (ATC)", ["FUKUOKA CTR", "TOKYO CTR", "SAPPORO CTR", "NAHA CTR", "RJTT APP", "RJAA TWR"])
-                cpdlc_msg_type = st.selectbox("REQUEST TYPE", ["CLIMB TO", "DESCENT TO", "DIRECT TO", "WEATHER DEVIATION", "REPORT BACK", "VOICE CONTACT REQUEST"])
-                cpdlc_val = st.text_input("VALUE (ALT/FIX/ETC)")
-                if st.button("SEND CPDLC REQUEST"):
-                    full_msg = f"REQ {cpdlc_msg_type} {cpdlc_val}".upper()
-                    st.session_state['cpdlc_messages'].append({"time": datetime.now().strftime("%H:%M"), "type": "CPDLC", "from": "ME", "content": full_msg})
-                    st.success(f"CPDLC SENT TO {cpdlc_to}")
-                    time.sleep(0.5)
-                    st.session_state['cpdlc_messages'].append({"time": datetime.now().strftime("%H:%M"), "type": "CPDLC", "from": cpdlc_to, "content": f"ROGER. {full_msg} APPROVED."})
-                    st.rerun()
-
-            with c_tab3:
-                st.markdown("### ACARS MESSAGE")
-                acars_to = st.text_input("RECIPIENT (AIRLINE/DISPATCH)", value="ANA OPS")
-                acars_content = st.text_area("MESSAGE CONTENT", placeholder="ETA RJTT 1230Z. REQUEST GATE ASSIGNMENT.")
-                if st.button("SEND ACARS"):
-                    if acars_content:
-                        st.session_state['cpdlc_messages'].append({"time": datetime.now().strftime("%H:%M"), "type": "ACARS", "from": "ME", "content": acars_content.upper()})
-                        st.success("ACARS MESSAGE TRANSMITTED")
-                        st.rerun()
-
         elif menu == "T/D CALC":
             st.subheader("TOP OF DESCENT CALCULATOR")
             c1, c2, c3 = st.columns(3)
@@ -305,7 +261,7 @@ else:
             if st.button("CLEAR PAD"): st.rerun()
 
         elif menu == "WEATHER (METAR/ATIS)":
-            st.subheader("AIRPORT WEATHER")
+            st.subheader("🌤️ AIRPORT WEATHER")
             icao_input = st.text_input("AIRPORT ICAO", "RJTT").upper().strip()
             if icao_input:
                 res = requests.get(f"https://metar.vatsim.net/metar.php?id={icao_input}")
@@ -373,7 +329,7 @@ else:
                     st.rerun()
 
         elif menu == "UNIT CONVERTER":
-            st.subheader("UNIT CONVERTER")
+            st.subheader("⚖️ UNIT CONVERTER")
             col1, col2 = st.columns(2)
             with col1:
                 st.write("**Weight (KG ⟷ LB)**")
@@ -407,7 +363,7 @@ else:
                 conts = [c for c in v_data.get("controllers", []) if c.get("callsign", "").upper().startswith(("RJ", "RO"))]
                 if conts:
                     for c in conts: st.success(f"**{c['callsign']}** ({c['name']}) - {c.get('frequency', 'N/A')}")
-                else: st.write("No controllers online.")
+                else: st.write("📡 No controllers online.")
                 st.write(f"**TRAFFIC AT {vatsim_icao}**")
                 pilots = []
                 for p in v_data.get("pilots", []):
@@ -419,7 +375,7 @@ else:
                     for p in pilots:
                         fplan = p.get("flight_plan")
                         st.info(f"**{p['callsign']}** | {(fplan.get('departure') if fplan else '???')} ➔ {(fplan.get('arrival') if fplan else '???')} | ALT: {p.get('altitude', 0)}ft")
-                else: st.write(f"No traffic reported for {vatsim_icao}.")
+                else: st.write(f"🛬 No traffic reported for {vatsim_icao}.")
 
     with main_tab2:
         st.subheader("AIRCRAFT CHECKLIST")
